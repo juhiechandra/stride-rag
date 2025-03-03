@@ -177,20 +177,35 @@ def index_document_to_chroma(file_path: str, file_id: int) -> bool:
     """
     try:
         print(f"Starting indexing for file_id: {file_id}")
-
-        # Directory to store extracted images
         image_dir = os.path.join("./chroma_db", "extracted_images")
 
         # Extract data
         texts, images = process_pdf(file_path, image_dir)
         print(f"Extracted {len(texts)} text blocks and {len(images)} images")
 
-        # Split text into chunks
+        # Improved text splitting strategy
         text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000, chunk_overlap=100)
+            chunk_size=500,  # Smaller chunks for more precise retrieval
+            chunk_overlap=200,  # Increased overlap to maintain context
+            length_function=len,
+            separators=["\n\n", "\n", ".", "!", "?", ",",
+                        " ", ""],  # More granular separators
+            is_separator_regex=False,
+        )
+
+        # Add more metadata to improve context
         text_docs = [
-            Document(page_content=text['content'], metadata={
-                     'page': text['page'], 'file_id': file_id, 'type': 'text'})
+            Document(
+                page_content=text['content'],
+                metadata={
+                    'page': text['page'],
+                    'file_id': file_id,
+                    'type': 'text',
+                    'chunk_type': 'document',
+                    'timestamp': datetime.now().isoformat(),
+                    'source': file_path
+                }
+            )
             for text in texts
         ]
         text_splits = text_splitter.split_documents(text_docs)

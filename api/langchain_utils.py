@@ -1,4 +1,3 @@
-
 from langchain.chat_models import ChatOpenAI
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -18,8 +17,17 @@ import os
 from chroma_utils import vectorstore
 from dotenv import load_dotenv
 import openai
+from datetime import datetime
 
-retriever = vectorstore.as_retriever(search_kwargs={"k": 2})
+# Enhanced retriever configuration
+retriever = vectorstore.as_retriever(
+    search_type="mmr",  # Use MMR for diversity in results
+    search_kwargs={
+        "k": 4,  # Increased from 2 to 4 for better context
+        "fetch_k": 20,  # Fetch more documents initially
+        "lambda_mult": 0.7,  # Diversity factor for MMR
+    }
+)
 
 output_parser = StrOutputParser()
 
@@ -161,45 +169,67 @@ User Interfaces | 1. Access Control Issues 2. Input validation or Injection 3. A
 User Registration | 1. Account takeover by changing existing user data 2. Credentials Over Unencrypted Channel 3. Lack of device binding with phone number making it easier for attackers to create multiple accounts or take over existing ones 4. User enumeration 5. Lack of mobile/email validation | A1: Broken Access Control A2: Cryptographic Failures A4: Insecure Design A7: Identification and Authentication Failures
 """
 
-# Set up prompts and chains
+# Enhanced system prompt for better context preservation
 contextualize_q_system_prompt = """
-You are a security context analyzer specializing in converting contextual security questions into detailed standalone queries. Your task is to:
+You are an advanced security context analyzer with expertise in maintaining conversation coherence and security context. Your role is to:
 
-1. ANALYZE the chat history and the latest user question carefully
-2. IDENTIFY all relevant security components, attack vectors, or OWASP categories mentioned in the conversation
-3. REFORMULATE the question into a detailed standalone query that:
-   - Preserves all specific security contexts from the chat history
-   - Includes relevant component names, security features, or attack vectors previously discussed
-   - Maintains any specific OWASP categories or security standards mentioned
-   - Expands pronouns (it, they, these, etc.) with their full references
-   - Adds critical context that would be needed for a complete security analysis
+1. ANALYZE the chat history comprehensively, focusing on:
+   - Previously mentioned security components and systems
+   - Specific attack vectors or vulnerabilities discussed
+   - Technical requirements and constraints mentioned
+   - Security standards and compliance requirements
+   - Any specific examples or use cases provided
 
-Rules:
-- Do NOT answer the question, only reformulate it
-- If the question is already standalone and specific, return it as is
-- Always maintain the security-focused nature of the question
-- Preserve any specific technical terms or security concepts mentioned
+2. PROCESS the latest user question by:
+   - Identifying references to previous context
+   - Detecting implicit security assumptions
+   - Understanding the security domain being discussed
+   - Recognizing any specific technical terms or concepts
 
-Examples:
-[Previous]: "Let's analyze the OAuth implementation in the login system"
-[User]: "What vulnerabilities should I check for?"
-[Output]: "What are the potential vulnerabilities and security risks in the OAuth implementation of the login system?"
+3. REFORMULATE the question to:
+   - Explicitly include all relevant context from chat history
+   - Maintain technical accuracy and security focus
+   - Preserve specific component names and security concepts
+   - Include relevant constraints and requirements
+   - Reference specific standards or frameworks mentioned
+   - Maintain continuity with previous security discussions
 
-[Previous]: "The mobile app uses biometric authentication"
-[User]: "Are there any issues with this approach?"
-[Output]: "What are the security vulnerabilities and potential attack vectors associated with biometric authentication implementation in the mobile app?"
+4. ENSURE the reformulated question:
+   - Is completely standalone and self-contained
+   - Maintains all security-relevant details
+   - Preserves the original intent and scope
+   - Includes all necessary technical context
+   - References specific components or systems
 
-[Previous]: "The payment gateway integrates with third-party providers"
-[User]: "How can these be exploited?"
-[Output]: "What are the potential security exploits and attack vectors for the third-party payment gateway integrations in the payment system?"
+Example Transformations:
+[History]: "We discussed SQL injection vulnerabilities in the login system."
+[User]: "What about XSS?"
+[Output]: "What are the potential Cross-Site Scripting (XSS) vulnerabilities in the login system, and how do they relate to the previously discussed SQL injection attack vectors?"
+
+[History]: "The system uses JWT for authentication."
+[User]: "Are there any security risks?"
+[Output]: "What are the specific security risks and potential vulnerabilities associated with the JWT-based authentication implementation in the system, including token handling, validation, and expiration mechanisms?"
+
+Remember: Do NOT answer the question - only reformulate it to include full context.
 """
-#     "Given a chat history and the latest user question "
-#     "which might reference context in the chat history, "
-#     "formulate a standalone question which can be understood "
-#     "without the chat history. Do NOT answer the question, "
-#     "just reformulate it if needed and otherwise return it as is."
-# )
 
+# Enhanced QA prompt template
+qa_prompt = ChatPromptTemplate.from_messages([
+    ("system", system_prompt),
+    ("system", """
+    Previous Context Summary:
+    {context}
+    
+    Focus on:
+    1. Maintaining consistency with previous security discussions
+    2. Incorporating relevant details from provided context
+    3. Ensuring comprehensive security analysis
+    4. Mapping to specific OWASP categories
+    5. Providing actionable security insights
+    """),
+    MessagesPlaceholder(variable_name="chat_history"),
+    ("human", role + "\n\nSpecific Security Question: {input}")
+])
 
 contextualize_q_prompt = ChatPromptTemplate.from_messages([
     ("system", contextualize_q_system_prompt),
@@ -207,21 +237,56 @@ contextualize_q_prompt = ChatPromptTemplate.from_messages([
     ("human", "{input}"),
 ])
 
-qa_prompt = ChatPromptTemplate.from_messages([
-    ("system", system_prompt),
-    ("system", "Context: {context}"),
-    MessagesPlaceholder(variable_name="chat_history"),
-    ("human", role + "\n\nUser Question: {input}")
-])
+# Add a custom reranking function
+
+
+def rerank_documents(documents: List[Document], query: str) -> List[Document]:
+    """
+    Rerank documents based on relevance to query and metadata
+    """
+    # Add scoring based on metadata and content relevance
+    scored_docs = []
+    for doc in documents:
+        score = 0
+        # Boost score for more recent documents
+        if 'timestamp' in doc.metadata:
+            time_diff = datetime.now() - \
+                datetime.fromisoformat(doc.metadata['timestamp'])
+            score += 1 / (1 + time_diff.days)
+
+        # Boost score for title/header matches
+        if query.lower() in doc.page_content.lower()[:100]:
+            score += 2
+
+        # Boost score for security-related content
+        security_terms = ['vulnerability',
+                          'attack', 'security', 'risk', 'threat']
+        score += sum(term in doc.page_content.lower()
+                     for term in security_terms)
+
+        scored_docs.append((doc, score))
+
+    # Sort by score and return documents
+    scored_docs.sort(key=lambda x: x[1], reverse=True)
+    return [doc for doc, _ in scored_docs]
 
 
 def get_rag_chain(model="gpt-4o-mini"):
-    # 1. Initialize the LLM
     llm = ChatOpenAI(model=model)
 
-    # 2. Create history-aware retriever
+    # Enhanced retriever with reranking
+    def enhanced_retriever(query, chat_history):
+        # Get initial documents
+        docs = retriever.get_relevant_documents(query)
+        # Rerank documents
+        reranked_docs = rerank_documents(docs, query)
+        return reranked_docs
+
     history_aware_retriever = create_history_aware_retriever(
-        llm, retriever, contextualize_q_prompt)
+        llm,
+        enhanced_retriever,
+        contextualize_q_prompt
+    )
 
     # 3. Create QA chain
     question_answer_chain = create_stuff_documents_chain(llm, qa_prompt)
