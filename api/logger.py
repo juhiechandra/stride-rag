@@ -48,6 +48,8 @@ api_logger = setup_logger('api', 'api.log')
 db_logger = setup_logger('db', 'db.log')
 model_logger = setup_logger('model', 'model.log')
 error_logger = setup_logger('error', 'error.log', level=logging.ERROR)
+# New logger for token usage
+token_logger = setup_logger('token', 'token_usage.log')
 
 # Performance monitoring
 
@@ -73,3 +75,24 @@ class PerformanceTimer:
         else:
             self.logger.info(
                 f"Operation {self.operation_name} completed in {elapsed_time:.2f} seconds")
+
+
+def log_token_usage(model_name, operation, input_tokens, output_tokens, total_tokens=None):
+    """
+    Log token usage for AI model operations.
+
+    Args:
+        model_name (str): Name of the AI model used
+        operation (str): Type of operation (e.g., "embedding", "chat", "image_description")
+        input_tokens (int): Number of input tokens
+        output_tokens (int): Number of output tokens
+        total_tokens (int, optional): Total tokens used. If None, will be calculated as input + output
+    """
+    if total_tokens is None:
+        total_tokens = input_tokens + output_tokens
+
+    token_logger.info(
+        f"Model: {model_name} | Operation: {operation} | "
+        f"Input tokens: {input_tokens} | Output tokens: {output_tokens} | "
+        f"Total tokens: {total_tokens}"
+    )
