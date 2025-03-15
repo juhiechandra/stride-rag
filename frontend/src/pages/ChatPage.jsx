@@ -43,6 +43,63 @@ const PDFControls = styled.div`
   padding: 0.75rem;
   background: #2c2c2c;
   border-bottom: 1px solid #374151;
+  justify-content: space-between;
+`;
+
+const ControlsLeft = styled.div`
+  display: flex;
+  gap: 0.5rem;
+`;
+
+const ControlsRight = styled.div`
+  display: flex;
+  gap: 0.5rem;
+`;
+
+const DocumentSelector = styled.div`
+  position: relative;
+  margin-right: 1rem;
+`;
+
+const DocumentButton = styled.button`
+  background: #374151;
+  border: none;
+  color: #e0e0e0;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+`;
+
+const DropdownMenu = styled.div`
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 250px;
+  background: #2c2c2c;
+  border: 1px solid #374151;
+  border-radius: 4px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  z-index: 10;
+  max-height: 300px;
+  overflow-y: auto;
+  display: ${(props) => (props.isOpen ? "block" : "none")};
+`;
+
+const DropdownItem = styled.div`
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  color: #e0e0e0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  &:hover {
+    background: #374151;
+  }
 `;
 
 const ControlButton = styled.button`
@@ -258,36 +315,6 @@ const ClearChatButton = styled.button`
   }
 `;
 
-const ToolbarButton = styled.button`
-  padding: 0.5rem;
-  background: none;
-  border: none;
-  border-radius: 0.375rem;
-  cursor: pointer;
-  color: #9ca3af;
-
-  &:hover {
-    background: #3b3b3b;
-  }
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-`;
-
-const PageInfo = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.25rem 0.75rem;
-  border: 1px solid #374151;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  color: #e0e0e0;
-  background: #2c2c2c;
-`;
-
 const LoadingState = styled.div`
   display: flex;
   align-items: center;
@@ -355,16 +382,24 @@ export default function ChatPage() {
   const fetchDocuments = async () => {
     try {
       const docs = await listDocuments();
-      // Remove duplicates based on filename
-      const uniqueDocs = docs.reduce((acc, current) => {
-        const x = acc.find((item) => item.filename === current.filename);
-        if (!x) {
-          return acc.concat([current]);
-        } else {
-          return acc;
+      setDocuments(docs);
+
+      // Get the project from localStorage to retrieve the fileId
+      const projects = JSON.parse(localStorage.getItem("projects") || "[]");
+      const currentProject = projects.find((p) => p.id === projectId);
+
+      if (currentProject && currentProject.fileId) {
+        // Find the document with the matching fileId
+        const projectDoc = docs.find(
+          (doc) => doc.file_id === currentProject.fileId
+        );
+        if (projectDoc) {
+          setSelectedDocument(projectDoc);
         }
-      }, []);
-      setDocuments(uniqueDocs);
+      } else if (docs.length > 0) {
+        // If no fileId is found, select the first document
+        setSelectedDocument(docs[0]);
+      }
     } catch (error) {
       console.error("Error fetching documents:", error);
     }
@@ -380,18 +415,49 @@ export default function ChatPage() {
     setIsLoading(true);
 
     try {
-      const response = await sendChatMessage(message, projectId);
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: response },
-      ]);
+      // Create a session ID if it doesn't exist
+      const sessionId =
+        localStorage.getItem(`chat_session_${projectId}`) ||
+        `session_${Date.now()}`;
+      localStorage.setItem(`chat_session_${projectId}`, sessionId);
+
+      // Use the selected model or default to gpt-4o
+      const selectedModel = localStorage.getItem("selectedModel") || "gpt-4o";
+
+      console.log("Sending message to API:", {
+        message,
+        sessionId,
+        selectedModel,
+      });
+      const response = await sendChatMessage(message, sessionId, selectedModel);
+      console.log("API response:", response);
+
+      // The backend returns 'answer' in the response
+      if (response && response.answer) {
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: response.answer },
+        ]);
+      } else {
+        console.error("Unexpected response format:", response);
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content:
+              "Received an unexpected response format. Please try again.",
+          },
+        ]);
+      }
     } catch (error) {
       console.error("Error sending message:", error);
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: "Sorry, there was an error. Please try again.",
+          content: `Error: ${
+            error.message || "Unknown error. Please try again."
+          }`,
         },
       ]);
     } finally {
@@ -430,34 +496,85 @@ export default function ChatPage() {
     setMessages([]);
   };
 
+  const toggleDocumentDropdown = () => {
+    setIsDropdownOpen((prev) => !prev);
+  };
+
+  const selectDocument = (doc) => {
+    setSelectedDocument(doc);
+    setIsDropdownOpen(false);
+  };
+
+  const handleDeleteDocument = async () => {
+    if (!selectedDocument) return;
+
+    try {
+      await deleteDocument(selectedDocument.file_id);
+      fetchDocuments();
+    } catch (error) {
+      console.error("Error deleting document:", error);
+    }
+  };
+
   return (
     <Container>
       <PDFSection>
         <PDFControls>
-          <ControlButton
-            onClick={() => changeScale(-0.1)}
-            disabled={scale <= 0.5}
-          >
-            <ZoomOut size={20} />
-          </ControlButton>
-          <ControlButton onClick={() => changeScale(0.1)} disabled={scale >= 2}>
-            <ZoomIn size={20} />
-          </ControlButton>
-          <ControlButton
-            onClick={() => changePage(-1)}
-            disabled={pageNumber <= 1}
-          >
-            <ArrowLeft size={20} />
-          </ControlButton>
-          <ControlButton
-            onClick={() => changePage(1)}
-            disabled={pageNumber >= numPages}
-          >
-            <ArrowRight size={20} />
-          </ControlButton>
-          <ControlButton onClick={() => setScale(1)}>
-            <RotateCcw size={20} />
-          </ControlButton>
+          <ControlsLeft>
+            <DocumentSelector>
+              <DocumentButton onClick={toggleDocumentDropdown}>
+                {selectedDocument
+                  ? selectedDocument.filename
+                  : "Select Document"}{" "}
+                <ChevronDown size={16} />
+              </DocumentButton>
+              <DropdownMenu isOpen={isDropdownOpen}>
+                {documents.map((doc) => (
+                  <DropdownItem
+                    key={doc.file_id}
+                    onClick={() => selectDocument(doc)}
+                  >
+                    {doc.filename}
+                    <Trash2
+                      size={16}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (window.confirm(`Delete ${doc.filename}?`)) {
+                          handleDeleteDocument(doc.file_id);
+                        }
+                      }}
+                    />
+                  </DropdownItem>
+                ))}
+              </DropdownMenu>
+            </DocumentSelector>
+            <ControlButton
+              onClick={() => changePage(-1)}
+              disabled={pageNumber <= 1}
+            >
+              <ArrowLeft size={18} />
+            </ControlButton>
+            <ControlButton
+              onClick={() => changePage(1)}
+              disabled={pageNumber >= numPages}
+            >
+              <ArrowRight size={18} />
+            </ControlButton>
+          </ControlsLeft>
+          <ControlsRight>
+            <ControlButton onClick={() => changeScale(0.1)}>
+              <ZoomIn size={18} />
+            </ControlButton>
+            <ControlButton onClick={() => changeScale(-0.1)}>
+              <ZoomOut size={18} />
+            </ControlButton>
+            <ControlButton onClick={() => setScale(1)}>
+              <RotateCcw size={18} />
+            </ControlButton>
+            <ControlButton onClick={() => downloadChatHistoryAsPDF(messages)}>
+              <Download size={18} />
+            </ControlButton>
+          </ControlsRight>
         </PDFControls>
 
         <PDFViewer>
