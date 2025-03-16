@@ -90,6 +90,7 @@ export const uploadDocument = async (formData) => {
 
 export const listDocuments = async () => {
   try {
+    // Use the API_BASE_URL to ensure the request goes through the proxy correctly
     const response = await fetch(`${API_BASE_URL}/documents`);
     return handleResponse(response);
   } catch (error) {

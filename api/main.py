@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
 from pydantic_models import QueryInput, QueryResponse, DocumentInfo, DeleteFileRequest
-from chroma_utils import index_document_to_chroma, delete_doc_from_chroma
+from milvus_utils import index_document_to_milvus, delete_doc_from_milvus, milvus_available, connect_to_milvus, init_vectorstore
 from langchain_utils import get_rag_chain
 from db_utils import get_chat_history, insert_application_logs, insert_document_record, delete_document_record, get_all_documents
 from logger import api_logger, error_logger, PerformanceTimer
@@ -75,9 +75,30 @@ async def log_requests(request: Request, call_next):
         raise
 
 
+@app.get("/milvus-status")
+async def milvus_status():
+    """Check if Milvus is available and try to reconnect if not"""
+    if milvus_available:
+        return {"status": "connected", "message": "Milvus is available and connected"}
+
+    # Try to reconnect
+    if connect_to_milvus():
+        init_vectorstore()
+        return {"status": "reconnected", "message": "Successfully reconnected to Milvus"}
+
+    return {"status": "unavailable", "message": "Milvus is not available. Please start the Milvus server."}
+
+
 @app.post("/upload-doc")
 async def upload_file(file: UploadFile = File(...)):
     with PerformanceTimer(api_logger, f"upload_file:{file.filename}"):
+        # Check if Milvus is available
+        if not milvus_available:
+            raise HTTPException(
+                status_code=503,
+                detail="Milvus database is not available. Please start the Milvus server."
+            )
+
         try:
             # Save temporary file
             temp_path = f"temp_{file.filename}"
@@ -90,7 +111,7 @@ async def upload_file(file: UploadFile = File(...)):
             file_id = insert_document_record(file.filename)
             api_logger.info(f"Document record inserted with ID: {file_id}")
 
-            if index_document_to_chroma(temp_path, file_id):
+            if index_document_to_milvus(temp_path, file_id):
                 api_logger.info(
                     f"Document indexed successfully: {file.filename} (ID: {file_id})")
                 return {"message": "Document indexed successfully", "file_id": file_id}
@@ -98,13 +119,16 @@ async def upload_file(file: UploadFile = File(...)):
                 api_logger.error(
                     f"Indexing failed for document: {file.filename}")
                 delete_document_record(file_id)
-                raise HTTPException(500, "Indexing failed")
-
+                raise HTTPException(
+                    status_code=500, detail="Failed to index document")
         except Exception as e:
-            error_logger.error(
-                f"Error uploading document {file.filename}: {str(e)}", exc_info=True)
-            raise HTTPException(500, f"Upload error: {str(e)}")
+            error_msg = f"Error processing upload for {file.filename}: {str(e)}"
+            api_logger.error(error_msg)
+            error_logger.error(error_msg, exc_info=True)
+            raise HTTPException(
+                status_code=500, detail=f"Error processing upload: {str(e)}")
         finally:
+            # Clean up temporary file
             if os.path.exists(temp_path):
                 os.remove(temp_path)
                 api_logger.info(f"Temporary file removed: {temp_path}")
@@ -113,6 +137,13 @@ async def upload_file(file: UploadFile = File(...)):
 @app.post("/chat")
 async def chat_endpoint(query: QueryInput) -> QueryResponse:
     with PerformanceTimer(api_logger, f"chat_endpoint:{query.model.value}"):
+        # Check if Milvus is available
+        if not milvus_available:
+            raise HTTPException(
+                status_code=503,
+                detail="Milvus database is not available. Please start the Milvus server."
+            )
+
         session_id = query.session_id or str(uuid.uuid4())
         api_logger.info(
             f"Chat request: session={session_id}, model={query.model.value}")
@@ -127,6 +158,13 @@ async def chat_endpoint(query: QueryInput) -> QueryResponse:
             api_logger.info(
                 f"Executing RAG chain with query: '{query.question[:50]}...'")
             rag_chain = get_rag_chain(query.model.value)
+
+            if rag_chain is None:
+                raise HTTPException(
+                    status_code=503,
+                    detail="RAG chain could not be created. Milvus database is not available."
+                )
+
             result = rag_chain.invoke({
                 "input": query.question,
                 "chat_history": history
@@ -169,23 +207,46 @@ async def list_documents():
 @app.post("/delete-doc")
 async def delete_document(req: DeleteFileRequest):
     with PerformanceTimer(api_logger, f"delete_document:{req.file_id}"):
+        # Check if Milvus is available
+        if not milvus_available:
+            # We can still delete from the database even if Milvus is not available
+            api_logger.warning(
+                "Milvus not available, only deleting from database")
+            if delete_document_record(req.file_id):
+                api_logger.info(
+                    f"Document record deleted from database: {req.file_id}")
+                return {"message": "Document deleted from database only. Milvus is not available."}
+            else:
+                raise HTTPException(
+                    status_code=500, detail="Failed to delete document record")
+
         try:
             api_logger.info(f"Deleting document with ID: {req.file_id}")
-            chroma_deleted = delete_doc_from_chroma(req.file_id)
-            db_deleted = delete_document_record(req.file_id)
 
-            if chroma_deleted and db_deleted:
+            # Delete from vector store
+            if delete_doc_from_milvus(req.file_id):
                 api_logger.info(
-                    f"Document deleted successfully: ID {req.file_id}")
-                return {"message": "Document deleted"}
+                    f"Document deleted from vector store: {req.file_id}")
+            else:
+                api_logger.warning(
+                    f"Failed to delete document from vector store: {req.file_id}")
 
-            error_logger.error(
-                f"Deletion failed for document ID {req.file_id}: Chroma={chroma_deleted}, DB={db_deleted}")
-            raise HTTPException(500, "Deletion failed")
+            # Delete from database
+            if delete_document_record(req.file_id):
+                api_logger.info(
+                    f"Document record deleted from database: {req.file_id}")
+                return {"message": "Document deleted successfully"}
+            else:
+                api_logger.error(
+                    f"Failed to delete document record: {req.file_id}")
+                raise HTTPException(
+                    status_code=500, detail="Failed to delete document record")
         except Exception as e:
-            error_logger.error(
-                f"Error deleting document {req.file_id}: {str(e)}", exc_info=True)
-            raise HTTPException(500, f"Deletion error: {str(e)}")
+            error_msg = f"Error deleting document {req.file_id}: {str(e)}"
+            api_logger.error(error_msg)
+            error_logger.error(error_msg, exc_info=True)
+            raise HTTPException(
+                status_code=500, detail=f"Error deleting document: {str(e)}")
 
 
 @app.post("/multimodal-chat")
@@ -245,8 +306,11 @@ async def multimodal_chat_endpoint(
 
             # For direct model access (bypassing RAG for image queries)
             if image_content and (model.startswith("gpt") or model.startswith("gemini")):
-                from chroma_utils import client as openai_client
+                from openai import OpenAI
                 import google.generativeai as genai
+                from dotenv import load_dotenv
+
+                load_dotenv()
 
                 if model.startswith("gpt"):
                     # Use OpenAI for image processing
@@ -254,6 +318,7 @@ async def multimodal_chat_endpoint(
                         f"Using OpenAI for image processing: model={model}")
                     start_time = time.time()
 
+                    openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
                     response = openai_client.chat.completions.create(
                         model=model,
                         messages=[
@@ -279,6 +344,7 @@ async def multimodal_chat_endpoint(
                         f"Using Gemini for image processing: model={model}")
                     start_time = time.time()
 
+                    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
                     gemini_model = genai.GenerativeModel(model)
                     response = gemini_model.generate_content([
                         question,
@@ -307,8 +373,22 @@ async def multimodal_chat_endpoint(
                 }
 
             # Standard RAG flow for text-only queries
+            # Check if Milvus is available for text queries
+            if not milvus_available:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Milvus database is not available. Please start the Milvus server."
+                )
+
             api_logger.info(f"Using standard RAG flow: model={model}")
             rag_chain = get_rag_chain(model)
+
+            if rag_chain is None:
+                raise HTTPException(
+                    status_code=503,
+                    detail="RAG chain could not be created. Milvus database is not available."
+                )
+
             result = rag_chain.invoke({
                 "input": question,
                 "chat_history": history
