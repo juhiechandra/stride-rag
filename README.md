@@ -24,7 +24,7 @@ A Retrieval Augmented Generation (RAG) system that supports both text and image 
 ### Gemini Models
 
 - gemini-2.0-flash
-- gemini-2.0-pro
+- gemini-2.0-flash
 
 ### OpenAI Models
 

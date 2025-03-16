@@ -157,3 +157,8 @@ frontend/src/assets/documents
 frontend/src/assets/models
 frontend/src/assets/uploads
 frontend/src/assets/temp
+
+
+api/faiss_db
+
+api/uploaded_files

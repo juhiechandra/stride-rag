@@ -2,19 +2,22 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request, sta
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
-from pydantic_models import QueryInput, QueryResponse, DocumentInfo, DeleteFileRequest
-from chroma_utils import index_document_to_chroma, delete_doc_from_chroma
+from pydantic_models import QueryInput, QueryResponse, DocumentInfo, DeleteFileRequest, DocumentBreakdownRequest, DocumentBreakdownResponse
+from faiss_utils import index_document_to_faiss, delete_doc_from_faiss, clean_faiss_db_except_current
 from langchain_utils import get_rag_chain
 from db_utils import get_chat_history, insert_application_logs, insert_document_record, delete_document_record, get_all_documents
+from breakdown import analyze_document
 from logger import api_logger, error_logger, PerformanceTimer
 import uuid
 import shutil
 import os
-from PIL import Image
-from io import BytesIO
-import base64
 import traceback
 import time
+import sqlite3
+
+# Create a directory for storing uploaded files
+UPLOAD_DIR = "./uploaded_files"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = FastAPI(title="Multimodal RAG API",
               description="A Retrieval Augmented Generation system with multimodal capabilities",
@@ -79,7 +82,7 @@ async def log_requests(request: Request, call_next):
 async def upload_file(file: UploadFile = File(...)):
     with PerformanceTimer(api_logger, f"upload_file:{file.filename}"):
         try:
-            # Save temporary file
+            # Save temporary file for indexing
             temp_path = f"temp_{file.filename}"
             with open(temp_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
@@ -90,67 +93,152 @@ async def upload_file(file: UploadFile = File(...)):
             file_id = insert_document_record(file.filename)
             api_logger.info(f"Document record inserted with ID: {file_id}")
 
-            if index_document_to_chroma(temp_path, file_id):
+            # Save the file to the permanent storage location
+            permanent_path = os.path.join(
+                UPLOAD_DIR, f"doc-{file_id}-{file.filename}")
+            shutil.copy(temp_path, permanent_path)
+            api_logger.info(
+                f"File saved to permanent storage: {permanent_path}")
+
+            if index_document_to_faiss(temp_path, file_id):
                 api_logger.info(
                     f"Document indexed successfully: {file.filename} (ID: {file_id})")
-                return {"message": "Document indexed successfully", "file_id": file_id}
-            else:
-                api_logger.error(
-                    f"Indexing failed for document: {file.filename}")
-                delete_document_record(file_id)
-                raise HTTPException(500, "Indexing failed")
 
-        except Exception as e:
-            error_logger.error(
-                f"Error uploading document {file.filename}: {str(e)}", exc_info=True)
-            raise HTTPException(500, f"Upload error: {str(e)}")
-        finally:
-            if os.path.exists(temp_path):
+                # Clean up FAISS DB to only keep the current document
+                clean_faiss_db_except_current(file_id, clean_db=True)
+                api_logger.info(
+                    f"FAISS DB and database cleaned, only document ID {file_id} remains")
+
+                # Clean up temporary file
                 os.remove(temp_path)
                 api_logger.info(f"Temporary file removed: {temp_path}")
+
+                # Clean up old files in the upload directory (keep only the current one)
+                cleanup_uploaded_files(file_id)
+
+                return {"message": "Document indexed successfully", "file_id": file_id}
+            else:
+                # Clean up if indexing failed
+                os.remove(temp_path)
+                os.remove(permanent_path)
+                api_logger.error(f"Failed to index document: {file.filename}")
+                return JSONResponse(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    content={"message": "Failed to index document"}
+                )
+        except Exception as e:
+            error_id = str(uuid.uuid4())
+            error_msg = f"Error uploading file: {str(e)}"
+            api_logger.error(f"{error_msg} (ID: {error_id})")
+            error_logger.error(
+                f"Error ID {error_id}: {error_msg}", exc_info=True)
+
+            # Clean up temporary file if it exists
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+            return JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content={"message": error_msg, "error_id": error_id}
+            )
+
+
+def cleanup_uploaded_files(current_file_id: int):
+    """Remove all uploaded files except the current one."""
+    try:
+        for filename in os.listdir(UPLOAD_DIR):
+            # Skip the current file
+            if filename.startswith(f"doc-{current_file_id}-"):
+                continue
+
+            file_path = os.path.join(UPLOAD_DIR, filename)
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+                api_logger.info(f"Removed old uploaded file: {file_path}")
+    except Exception as e:
+        error_logger.error(
+            f"Error cleaning up uploaded files: {str(e)}", exc_info=True)
 
 
 @app.post("/chat")
 async def chat_endpoint(query: QueryInput) -> QueryResponse:
-    with PerformanceTimer(api_logger, f"chat_endpoint:{query.model.value}"):
-        session_id = query.session_id or str(uuid.uuid4())
-        api_logger.info(
-            f"Chat request: session={session_id}, model={query.model.value}")
+    """
+    Process a chat query using RAG.
 
-        try:
-            # Retrieve chat history
-            history = get_chat_history(session_id)
-            api_logger.info(
-                f"Retrieved chat history: {len(history)//2} messages")
+    Args:
+        query: The query input containing the question and chat history.
 
-            # Execute RAG chain
-            api_logger.info(
-                f"Executing RAG chain with query: '{query.question[:50]}...'")
-            rag_chain = get_rag_chain(query.model.value)
-            result = rag_chain.invoke({
+    Returns:
+        A response containing the answer and updated chat history.
+    """
+    try:
+        with PerformanceTimer(api_logger, f"chat_endpoint:{query.question[:30]}"):
+            api_logger.info(f"Received chat query: {query.question[:100]}...")
+
+            # Get chat history from database if session_id is provided
+            chat_history = []
+            if query.session_id:
+                api_logger.info(
+                    f"Getting chat history for session: {query.session_id}")
+                chat_history = get_chat_history(query.session_id)
+                api_logger.info(
+                    f"Retrieved {len(chat_history)} chat history items")
+
+            # Convert chat history to the format expected by LangChain
+            formatted_history = []
+            for item in chat_history:
+                formatted_history.append(("human", item["question"]))
+                formatted_history.append(("ai", item["answer"]))
+
+            # Get RAG chain with specified model and hybrid search option
+            use_hybrid_search = query.use_hybrid_search if hasattr(
+                query, 'use_hybrid_search') else True
+            chain = get_rag_chain(
+                model=query.model, use_hybrid_search=use_hybrid_search)
+
+            # Process query
+            api_logger.info(f"Processing query with model: {query.model}")
+            start_time = time.time()
+            response = chain.invoke({
                 "input": query.question,
-                "chat_history": history
+                "chat_history": formatted_history
             })
+            end_time = time.time()
+            processing_time = end_time - start_time
+            api_logger.info(
+                f"Query processed in {processing_time:.2f} seconds")
 
-            # Log interaction
-            insert_application_logs(
-                session_id=session_id,
-                user_query=query.question,
-                gpt_response=result["answer"],
-                model=query.model.value
-            )
-            api_logger.info(f"Interaction logged: session={session_id}")
+            # Extract answer
+            answer = response["answer"]
+            api_logger.info(f"Generated answer: {answer[:100]}...")
 
+            # Log to database if session_id is provided
+            if query.session_id:
+                api_logger.info(
+                    f"Logging chat to database for session: {query.session_id}")
+                insert_application_logs(
+                    session_id=query.session_id,
+                    question=query.question,
+                    answer=answer,
+                    model=query.model,
+                    processing_time=processing_time
+                )
+
+            # Return response
             return QueryResponse(
-                answer=result["answer"],
-                session_id=session_id,
+                answer=answer,
+                processing_time=processing_time,
                 model=query.model
             )
 
-        except Exception as e:
-            error_logger.error(
-                f"Error processing chat request: {str(e)}", exc_info=True)
-            raise HTTPException(500, f"Processing error: {str(e)}")
+    except Exception as e:
+        error_msg = f"Error processing chat query: {str(e)}"
+        api_logger.error(error_msg)
+        error_logger.error(error_msg, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing query: {str(e)}"
+        )
 
 
 @app.get("/documents", response_model=List[DocumentInfo])
@@ -168,169 +256,201 @@ async def list_documents():
 
 @app.post("/delete-doc")
 async def delete_document(req: DeleteFileRequest):
+    """Delete a document from the system."""
     with PerformanceTimer(api_logger, f"delete_document:{req.file_id}"):
         try:
-            api_logger.info(f"Deleting document with ID: {req.file_id}")
-            chroma_deleted = delete_doc_from_chroma(req.file_id)
-            db_deleted = delete_document_record(req.file_id)
+            # Get the document filename before deleting the record
+            conn = sqlite3.connect("rag_app.db")
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT filename FROM document_store WHERE id = ?", (req.file_id,))
+            document = cursor.fetchone()
+            conn.close()
 
-            if chroma_deleted and db_deleted:
+            if not document:
+                api_logger.error(f"Document with ID {req.file_id} not found")
+                return JSONResponse(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    content={
+                        "message": f"Document with ID {req.file_id} not found"}
+                )
+
+            filename = document["filename"]
+
+            # Delete from FAISS
+            if delete_doc_from_faiss(req.file_id):
                 api_logger.info(
-                    f"Document deleted successfully: ID {req.file_id}")
-                return {"message": "Document deleted"}
+                    f"Document removed from FAISS: ID {req.file_id}")
+            else:
+                api_logger.warning(
+                    f"Failed to remove document from FAISS: ID {req.file_id}")
 
-            error_logger.error(
-                f"Deletion failed for document ID {req.file_id}: Chroma={chroma_deleted}, DB={db_deleted}")
-            raise HTTPException(500, "Deletion failed")
+            # Delete from database
+            if delete_document_record(req.file_id):
+                api_logger.info(
+                    f"Document record deleted: ID {req.file_id}")
+            else:
+                api_logger.warning(
+                    f"Failed to delete document record: ID {req.file_id}")
+
+            # Delete the file from the upload directory if it exists
+            upload_path = os.path.join(
+                UPLOAD_DIR, f"doc-{req.file_id}-{filename}")
+            if os.path.exists(upload_path):
+                os.remove(upload_path)
+                api_logger.info(
+                    f"Deleted file from upload directory: {upload_path}")
+
+            return {"message": f"Document with ID {req.file_id} deleted"}
         except Exception as e:
+            error_id = str(uuid.uuid4())
+            error_msg = f"Error deleting document: {str(e)}"
+            api_logger.error(f"{error_msg} (ID: {error_id})")
             error_logger.error(
-                f"Error deleting document {req.file_id}: {str(e)}", exc_info=True)
-            raise HTTPException(500, f"Deletion error: {str(e)}")
+                f"Error ID {error_id}: {error_msg}", exc_info=True)
+            return JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content={"message": error_msg, "error_id": error_id}
+            )
 
 
-@app.post("/multimodal-chat")
-async def multimodal_chat_endpoint(
-    question: str = Form(...),
-    session_id: Optional[str] = Form(None),
-    model: str = Form("gemini-2.0-flash"),
-    image: Optional[UploadFile] = File(None)
-):
-    current_session_id = session_id or str(uuid.uuid4())
-    operation_name = f"multimodal_chat:{current_session_id}:{model}"
-
-    with PerformanceTimer(api_logger, operation_name):
+@app.post("/document/analyze", response_model=DocumentBreakdownResponse)
+async def analyze_document_endpoint(req: DocumentBreakdownRequest):
+    """Analyze a document and generate a structured breakdown."""
+    with PerformanceTimer(api_logger, f"analyze_document:{req.file_id}"):
         try:
+            # Validate file_id
+            conn = sqlite3.connect("rag_app.db")
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT filename FROM document_store WHERE id = ?", (req.file_id,))
+            document = cursor.fetchone()
+            conn.close()
+
+            if not document:
+                error_msg = f"Document with ID {req.file_id} not found in database"
+                api_logger.error(error_msg)
+                return JSONResponse(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    content={"status": "error", "message": error_msg}
+                )
+
+            # Check if file exists in upload directory
+            filename = document["filename"]
+            upload_path = os.path.join(
+                UPLOAD_DIR, f"doc-{req.file_id}-{filename}")
+
+            if not os.path.exists(upload_path):
+                error_msg = f"Document file not found at expected path: {upload_path}"
+                api_logger.error(error_msg)
+                return JSONResponse(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    content={"status": "error", "message": error_msg}
+                )
+
+            # Log file details
+            file_size = os.path.getsize(upload_path)
+            api_logger.info(f"Document file size: {file_size} bytes")
+
+            # Call the analyze_document function
             api_logger.info(
-                f"Multimodal chat request: session={current_session_id}, model={model}, has_image={image is not None}")
+                f"Calling analyze_document for file ID {req.file_id} with model {req.model}")
+            breakdown = analyze_document(req.file_id, req.model)
 
-            # Retrieve chat history
-            history = get_chat_history(current_session_id)
-            api_logger.info(
-                f"Retrieved chat history: {len(history)//2} messages")
+            # Check if there was an error
+            if "error" in breakdown:
+                error_msg = breakdown["error"]
+                api_logger.error(error_msg)
+                return JSONResponse(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    content={"status": "error", "message": error_msg}
+                )
 
-            # Process image if provided
-            image_content = None
-            if image:
-                api_logger.info(f"Processing image: {image.filename}")
-                # Read and process image
-                image_bytes = await image.read()
-                img = Image.open(BytesIO(image_bytes))
+            # Validate the breakdown structure
+            try:
+                # Check if all required fields are present
+                required_fields = ["major_components",
+                                   "diagrams", "api_contracts", "pii_data"]
+                missing_fields = [
+                    field for field in required_fields if field not in breakdown]
 
-                # Resize image to reduce token count
-                max_dimension = 800
-                width, height = img.size
-                api_logger.info(f"Original image dimensions: {width}x{height}")
-
-                if width > height:
-                    new_width = max_dimension
-                    new_height = int(height * (max_dimension / width))
-                else:
-                    new_height = max_dimension
-                    new_width = int(width * (max_dimension / height))
-
-                # Resize and compress
-                img = img.resize((new_width, new_height), Image.LANCZOS)
-                api_logger.info(
-                    f"Resized image dimensions: {new_width}x{new_height}")
-
-                buffer = BytesIO()
-                img.save(buffer, format="JPEG", quality=85)
-                buffer.seek(0)
-
-                # Convert to base64
-                image_content = base64.b64encode(
-                    buffer.getvalue()).decode('utf-8')
-                api_logger.info(
-                    f"Image processed: original size={len(image_bytes)}, compressed size={len(buffer.getvalue())}")
-
-            # For direct model access (bypassing RAG for image queries)
-            if image_content and (model.startswith("gpt") or model.startswith("gemini")):
-                from chroma_utils import client as openai_client
-                import google.generativeai as genai
-
-                if model.startswith("gpt"):
-                    # Use OpenAI for image processing
-                    api_logger.info(
-                        f"Using OpenAI for image processing: model={model}")
-                    start_time = time.time()
-
-                    response = openai_client.chat.completions.create(
-                        model=model,
-                        messages=[
-                            {"role": "system",
-                                "content": "You are a helpful assistant that can analyze images."},
-                            {"role": "user", "content": [
-                                {"type": "text", "text": question},
-                                {"type": "image_url", "image_url": {
-                                    "url": f"data:image/jpeg;base64,{image_content}"}}
-                            ]}
-                        ],
-                        max_tokens=1000
+                if missing_fields:
+                    error_msg = f"Breakdown response is missing required fields: {', '.join(missing_fields)}"
+                    api_logger.error(error_msg)
+                    return JSONResponse(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        content={"status": "error", "message": error_msg}
                     )
 
-                    elapsed_time = time.time() - start_time
-                    api_logger.info(
-                        f"OpenAI response received in {elapsed_time:.2f}s")
-                    answer = response.choices[0].message.content
-
-                elif model.startswith("gemini"):
-                    # Use Gemini for image processing
-                    api_logger.info(
-                        f"Using Gemini for image processing: model={model}")
-                    start_time = time.time()
-
-                    gemini_model = genai.GenerativeModel(model)
-                    response = gemini_model.generate_content([
-                        question,
-                        {"mime_type": "image/jpeg", "data": buffer.getvalue()}
-                    ])
-
-                    elapsed_time = time.time() - start_time
-                    api_logger.info(
-                        f"Gemini response received in {elapsed_time:.2f}s")
-                    answer = response.text
-
-                # Log interaction
-                insert_application_logs(
-                    session_id=current_session_id,
-                    user_query=f"[Image Query] {question}",
-                    gpt_response=answer,
-                    model=model
-                )
                 api_logger.info(
-                    f"Multimodal interaction logged: session={current_session_id}")
-
-                return {
-                    "answer": answer,
-                    "session_id": current_session_id,
-                    "model": model
-                }
-
-            # Standard RAG flow for text-only queries
-            api_logger.info(f"Using standard RAG flow: model={model}")
-            rag_chain = get_rag_chain(model)
-            result = rag_chain.invoke({
-                "input": question,
-                "chat_history": history
-            })
-
-            # Log interaction
-            insert_application_logs(
-                session_id=current_session_id,
-                user_query=question,
-                gpt_response=result["answer"],
-                model=model
-            )
-            api_logger.info(
-                f"Text interaction logged: session={current_session_id}")
-
-            return {
-                "answer": result["answer"],
-                "session_id": current_session_id,
-                "model": model
-            }
-
+                    f"Document {req.file_id} analyzed successfully")
+                return breakdown
+            except Exception as validation_error:
+                error_msg = f"Error validating breakdown response: {str(validation_error)}"
+                api_logger.error(error_msg)
+                return JSONResponse(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    content={"status": "error", "message": error_msg}
+                )
         except Exception as e:
-            error_msg = f"Multimodal processing error: {str(e)}"
-            error_logger.error(error_msg, exc_info=True)
-            raise HTTPException(500, error_msg)
+            error_id = str(uuid.uuid4())
+            error_msg = f"Error analyzing document: {str(e)}"
+            api_logger.error(f"{error_msg} (ID: {error_id})")
+            error_logger.error(
+                f"Error ID {error_id}: {error_msg}", exc_info=True)
+            return JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content={"status": "error",
+                         "message": error_msg, "error_id": error_id}
+            )
+
+
+@app.post("/cleanup-documents")
+async def cleanup_documents():
+    """Clean up all documents from the system."""
+    with PerformanceTimer(api_logger, "cleanup_documents"):
+        try:
+            # Get all documents
+            documents = get_all_documents()
+
+            # Delete each document
+            for doc in documents:
+                file_id = doc["id"]
+                filename = doc["filename"]
+
+                # Delete from FAISS
+                delete_doc_from_faiss(file_id)
+
+                # Delete from database
+                delete_document_record(file_id)
+
+                # Delete from upload directory
+                upload_path = os.path.join(
+                    UPLOAD_DIR, f"doc-{file_id}-{filename}")
+                if os.path.exists(upload_path):
+                    os.remove(upload_path)
+                    api_logger.info(
+                        f"Deleted file from upload directory: {upload_path}")
+
+            # Clean up all files in the upload directory
+            for filename in os.listdir(UPLOAD_DIR):
+                file_path = os.path.join(UPLOAD_DIR, filename)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+                    api_logger.info(
+                        f"Removed file from upload directory: {file_path}")
+
+            api_logger.info("All documents cleaned up successfully")
+            return {"message": "All documents cleaned up successfully"}
+        except Exception as e:
+            error_id = str(uuid.uuid4())
+            error_msg = f"Error cleaning up documents: {str(e)}"
+            api_logger.error(f"{error_msg} (ID: {error_id})")
+            error_logger.error(
+                f"Error ID {error_id}: {error_msg}", exc_info=True)
+            return JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content={"message": error_msg, "error_id": error_id}
+            )

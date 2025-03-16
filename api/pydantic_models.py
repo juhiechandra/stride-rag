@@ -1,5 +1,5 @@
-from typing import Optional
-from pydantic import BaseModel, Field
+from typing import Optional, List, Dict, Any
+from pydantic import BaseModel, Field, field_validator
 from enum import Enum
 from datetime import datetime
 from typing import Optional, Annotated
@@ -8,17 +8,30 @@ from typing import Optional, Annotated
 class ModelName(str, Enum):
     # Gemini models
     GEMINI_2_0_FLASH = "gemini-2.0-flash"
-    GEMINI_2_0_PRO = "gemini-2.0-pro"
+    GEMINI_2_0_PRO = "gemini-2.0-flash"
 
-    # OpenAI models
-    GPT_4O_MINI = "gpt-4o-mini"
-    GPT_4O = "gpt-4o"
+    # No OpenAI models - removed
 
 
 class QueryInput(BaseModel):
     session_id: Optional[str] = None
     question: str  # Mandatory field
-    model: ModelName = ModelName.GEMINI_2_0_FLASH  # Default value
+    model: str = "gemini-2.0-flash"  # Changed from ModelName to str to accept any value
+    # Whether to use hybrid search (vector + BM25) or just vector search
+    use_hybrid_search: bool = True
+
+    # Validator to ensure model is a valid Gemini model
+    @field_validator('model')
+    @classmethod
+    def validate_model(cls, v):
+        # If not a Gemini model, default to gemini-2.0-flash
+        if not v.startswith("gemini"):
+            return "gemini-2.0-flash"
+        # If it's already a valid Gemini model, return as is
+        if v in [m.value for m in ModelName]:
+            return v
+        # If it's a Gemini model but not in our enum, default to gemini-2.0-flash
+        return "gemini-2.0-flash"
 
     model_config = {
         "json_schema_extra": {
@@ -26,7 +39,8 @@ class QueryInput(BaseModel):
                 {
                     "session_id": "some-uuid-here",
                     "question": "What is RAG?",
-                    "model": "gemini-2.0-flash"
+                    "model": "gemini-2.0-flash",
+                    "use_hybrid_search": True
                 }
             ]
         }
@@ -35,15 +49,15 @@ class QueryInput(BaseModel):
 
 class QueryResponse(BaseModel):
     answer: str
-    session_id: str
-    model: ModelName
+    processing_time: float
+    model: str  # Changed from ModelName to str to match QueryInput
 
     model_config = {
         "json_schema_extra": {
             "examples": [
                 {
                     "answer": "RAG stands for Retrieval Augmented Generation...",
-                    "session_id": "some-uuid-here",
+                    "processing_time": 1.25,
                     "model": "gemini-2.0-flash"
                 }
             ]
@@ -59,3 +73,50 @@ class DocumentInfo(BaseModel):
 
 class DeleteFileRequest(BaseModel):
     file_id: int
+
+
+# New models for document breakdown
+
+class ComponentInfo(BaseModel):
+    name: str
+    description: str
+    key_functions: List[str]
+
+
+class DiagramInfo(BaseModel):
+    type: str
+    purpose: str
+    key_elements: List[str]
+    relation_to_system: str
+
+
+class ApiParameterInfo(BaseModel):
+    name: str
+    type: str
+    description: str
+
+
+class ApiContractInfo(BaseModel):
+    endpoint: str
+    method: str
+    parameters: List[ApiParameterInfo]
+    success_response: str
+    error_codes: List[str]
+
+
+class PiiDataInfo(BaseModel):
+    identified_fields: List[str]
+    handling_procedures: str
+    compliance_standards: List[str]
+
+
+class DocumentBreakdownResponse(BaseModel):
+    major_components: List[ComponentInfo]
+    diagrams: List[DiagramInfo]
+    api_contracts: List[ApiContractInfo]
+    pii_data: PiiDataInfo
+
+
+class DocumentBreakdownRequest(BaseModel):
+    file_id: int
+    model: str = "gemini-2.0-flash"  # Using a more capable model for document analysis

@@ -79,6 +79,14 @@ const AppLayout = () => {
           </MenuItem>
           <MenuItem>
             <MenuLink
+              to="/documents"
+              className={location.pathname === "/documents" ? "active" : ""}
+            >
+              Documents
+            </MenuLink>
+          </MenuItem>
+          <MenuItem>
+            <MenuLink
               to="/settings"
               className={location.pathname === "/settings" ? "active" : ""}
             >

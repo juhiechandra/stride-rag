@@ -8,6 +8,8 @@ import DocumentPage from "./pages/DocumentPage";
 import Settings from "./pages/Settings.jsx";
 import Login from "./pages/Login";
 import NewProject from "./pages/NewProject";
+import Breakdown from "./pages/Breakdown";
+import Documents from "./pages/Documents";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
 
 function App() {
@@ -25,6 +27,11 @@ function App() {
                 <Route path="/projects" element={<Projects />} />
                 <Route path="/new-project" element={<NewProject />} />
                 <Route path="/settings" element={<Settings />} />
+                <Route path="/documents" element={<Documents />} />
+                <Route
+                  path="/document/breakdown/:fileId"
+                  element={<Breakdown />}
+                />
                 <Route
                   path="/project/:projectId/*"
                   element={<DocumentPage />}
