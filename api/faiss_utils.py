@@ -83,34 +83,84 @@ def extract_images_pymupdf(pdf_path: str, output_dir: str) -> List[Dict]:
         os.makedirs(output_dir, exist_ok=True)
 
         try:
+            # Check if file exists
+            if not os.path.exists(pdf_path):
+                error_msg = f"PDF file does not exist: {pdf_path}"
+                model_logger.error(error_msg)
+                error_logger.error(error_msg)
+                return []
+
+            # Check file size
+            file_size = os.path.getsize(pdf_path)
+            if file_size == 0:
+                error_msg = f"PDF file is empty (0 bytes): {pdf_path}"
+                model_logger.error(error_msg)
+                error_logger.error(error_msg)
+                return []
+
+            model_logger.info(
+                f"Opening PDF file for image extraction: {pdf_path} ({file_size} bytes)")
+
+            # Check file extension
+            _, file_extension = os.path.splitext(pdf_path)
+            if file_extension.lower() != '.pdf':
+                error_msg = f"File is not a PDF: {pdf_path} (extension: {file_extension})"
+                model_logger.error(error_msg)
+                error_logger.error(error_msg)
+                return []
+
             pdf_document = fitz.open(pdf_path)
             model_logger.info(
                 f"PDF opened: {pdf_path} ({len(pdf_document)} pages)")
 
+            if len(pdf_document) == 0:
+                error_msg = f"PDF has no pages: {pdf_path}"
+                model_logger.error(error_msg)
+                error_logger.error(error_msg)
+                return []
+
             for page_num in range(len(pdf_document)):
-                page = pdf_document[page_num]
-                image_list = page.get_images(full=True)
+                try:
+                    page = pdf_document[page_num]
+                    image_list = page.get_images(full=True)
 
-                for img_index, img in enumerate(image_list):
-                    xref = img[0]
-                    base_image = pdf_document.extract_image(xref)
-                    image_bytes = base_image["image"]
+                    if not image_list:
+                        model_logger.info(
+                            f"No images found on page {page_num+1}")
+                        continue
 
-                    # Generate a unique filename
-                    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-                    image_filename = f"page{page_num+1}_img{img_index+1}_{timestamp}.png"
-                    image_path = os.path.join(output_dir, image_filename)
+                    for img_index, img in enumerate(image_list):
+                        try:
+                            xref = img[0]
+                            base_image = pdf_document.extract_image(xref)
+                            image_bytes = base_image["image"]
 
-                    # Save the image
-                    with open(image_path, "wb") as img_file:
-                        img_file.write(image_bytes)
+                            # Generate a unique filename
+                            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+                            image_filename = f"page{page_num+1}_img{img_index+1}_{timestamp}.png"
+                            image_path = os.path.join(
+                                output_dir, image_filename)
 
-                    # Add to our list
-                    images.append({
-                        'path': image_path,
-                        'page': page_num + 1,
-                        'index': img_index + 1
-                    })
+                            # Save the image
+                            with open(image_path, "wb") as img_file:
+                                img_file.write(image_bytes)
+
+                            # Add to our list
+                            images.append({
+                                'path': image_path,
+                                'page': page_num + 1,
+                                'index': img_index + 1
+                            })
+                        except Exception as img_error:
+                            error_msg = f"Error extracting image {img_index+1} from page {page_num+1}: {str(img_error)}"
+                            model_logger.error(error_msg)
+                            error_logger.error(error_msg, exc_info=True)
+                            # Continue with other images
+                except Exception as page_error:
+                    error_msg = f"Error processing page {page_num+1} for images: {str(page_error)}"
+                    model_logger.error(error_msg)
+                    error_logger.error(error_msg, exc_info=True)
+                    # Continue with other pages
 
             model_logger.info(
                 f"Extracted {len(images)} images from {pdf_path}")
@@ -128,17 +178,65 @@ def extract_text_pdfplumber(pdf_path: str) -> List[Dict]:
     with PerformanceTimer(model_logger, f"extract_text_pdfplumber:{os.path.basename(pdf_path)}"):
         texts = []
         try:
+            # Check if file exists
+            if not os.path.exists(pdf_path):
+                error_msg = f"PDF file does not exist: {pdf_path}"
+                model_logger.error(error_msg)
+                error_logger.error(error_msg)
+                return []
+
+            # Check file size
+            file_size = os.path.getsize(pdf_path)
+            if file_size == 0:
+                error_msg = f"PDF file is empty (0 bytes): {pdf_path}"
+                model_logger.error(error_msg)
+                error_logger.error(error_msg)
+                return []
+
+            model_logger.info(
+                f"Opening PDF file: {pdf_path} ({file_size} bytes)")
+
+            # Check file extension
+            _, file_extension = os.path.splitext(pdf_path)
+            if file_extension.lower() != '.pdf':
+                error_msg = f"File is not a PDF: {pdf_path} (extension: {file_extension})"
+                model_logger.error(error_msg)
+                error_logger.error(error_msg)
+                return []
+
             with pdfplumber.open(pdf_path) as pdf:
                 model_logger.info(
                     f"PDF opened with pdfplumber: {pdf_path} ({len(pdf.pages)} pages)")
 
+                if len(pdf.pages) == 0:
+                    error_msg = f"PDF has no pages: {pdf_path}"
+                    model_logger.error(error_msg)
+                    error_logger.error(error_msg)
+                    return []
+
                 for page_num, page in enumerate(pdf.pages):
-                    text = page.extract_text()
-                    if text and text.strip():
-                        texts.append({
-                            'content': text,
-                            'page': page_num + 1
-                        })
+                    try:
+                        text = page.extract_text()
+                        if text and text.strip():
+                            texts.append({
+                                'content': text,
+                                'page': page_num + 1,
+                                'text': text  # Add text field for compatibility
+                            })
+                        else:
+                            model_logger.warning(
+                                f"Page {page_num+1} has no text content")
+                    except Exception as page_error:
+                        error_msg = f"Error extracting text from page {page_num+1}: {str(page_error)}"
+                        model_logger.error(error_msg)
+                        error_logger.error(error_msg, exc_info=True)
+                        # Continue with other pages
+
+            if not texts:
+                error_msg = f"No text could be extracted from any page in {pdf_path}"
+                model_logger.error(error_msg)
+                error_logger.error(error_msg)
+                return []
 
             model_logger.info(
                 f"Extracted text from {len(texts)} pages in {pdf_path}")
@@ -363,3 +461,42 @@ def delete_doc_from_faiss(file_id: int) -> bool:
             model_logger.error(error_msg)
             error_logger.error(error_msg, exc_info=True)
             return False
+
+
+def clean_faiss_db_except_current(current_file_id: int, clean_db: bool = False) -> bool:
+    """
+    Clean up the FAISS database and only keep the current document.
+
+    Args:
+        current_file_id (int): The ID of the document to keep.
+        clean_db (bool): Whether to also clean up database records.
+
+    Returns:
+        bool: True if successful, False otherwise.
+    """
+    try:
+        model_logger.info(
+            f"Cleaning FAISS DB except for document ID: {current_file_id}")
+
+        # Get all document IDs in the database
+        all_ids = list(file_id_mapping.keys())
+
+        # Remove all documents except the current one
+        for file_id in all_ids:
+            if file_id != current_file_id:
+                model_logger.info(f"Removing document ID: {file_id}")
+                delete_doc_from_faiss(file_id)
+
+                # If clean_db is True, also delete from database
+                if clean_db:
+                    from db_utils import delete_document_record
+                    model_logger.info(
+                        f"Removing document ID {file_id} from database")
+                    delete_document_record(file_id)
+
+        model_logger.info(
+            f"FAISS DB cleaned, only document ID {current_file_id} remains")
+        return True
+    except Exception as e:
+        error_logger.error(f"Error cleaning FAISS DB: {str(e)}", exc_info=True)
+        return False

@@ -160,3 +160,5 @@ frontend/src/assets/temp
 
 
 api/faiss_db
+
+api/uploaded_files

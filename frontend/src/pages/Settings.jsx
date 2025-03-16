@@ -124,10 +124,10 @@ export default function Settings() {
             <RadioOption>
               <input
                 type="radio"
-                id="gemini-2.0-pro"
+                id="gemini-2.0-flash"
                 name="model"
-                value="gemini-2.0-pro"
-                checked={selectedModel === "gemini-2.0-pro"}
+                value="gemini-2.0-flash"
+                checked={selectedModel === "gemini-2.0-flash"}
                 onChange={handleModelChange}
               />
               <span>Gemini 2.0 Pro</span>

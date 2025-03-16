@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field, field_validator
 from enum import Enum
 from datetime import datetime
@@ -8,7 +8,7 @@ from typing import Optional, Annotated
 class ModelName(str, Enum):
     # Gemini models
     GEMINI_2_0_FLASH = "gemini-2.0-flash"
-    GEMINI_2_0_PRO = "gemini-2.0-pro"
+    GEMINI_2_0_PRO = "gemini-2.0-flash"
 
     # No OpenAI models - removed
 
@@ -73,3 +73,50 @@ class DocumentInfo(BaseModel):
 
 class DeleteFileRequest(BaseModel):
     file_id: int
+
+
+# New models for document breakdown
+
+class ComponentInfo(BaseModel):
+    name: str
+    description: str
+    key_functions: List[str]
+
+
+class DiagramInfo(BaseModel):
+    type: str
+    purpose: str
+    key_elements: List[str]
+    relation_to_system: str
+
+
+class ApiParameterInfo(BaseModel):
+    name: str
+    type: str
+    description: str
+
+
+class ApiContractInfo(BaseModel):
+    endpoint: str
+    method: str
+    parameters: List[ApiParameterInfo]
+    success_response: str
+    error_codes: List[str]
+
+
+class PiiDataInfo(BaseModel):
+    identified_fields: List[str]
+    handling_procedures: str
+    compliance_standards: List[str]
+
+
+class DocumentBreakdownResponse(BaseModel):
+    major_components: List[ComponentInfo]
+    diagrams: List[DiagramInfo]
+    api_contracts: List[ApiContractInfo]
+    pii_data: PiiDataInfo
+
+
+class DocumentBreakdownRequest(BaseModel):
+    file_id: int
+    model: str = "gemini-2.0-flash"  # Using a more capable model for document analysis
