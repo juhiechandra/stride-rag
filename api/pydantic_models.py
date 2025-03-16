@@ -1,5 +1,5 @@
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from enum import Enum
 from datetime import datetime
 from typing import Optional, Annotated
@@ -10,15 +10,26 @@ class ModelName(str, Enum):
     GEMINI_2_0_FLASH = "gemini-2.0-flash"
     GEMINI_2_0_PRO = "gemini-2.0-pro"
 
-    # OpenAI models
-    GPT_4O_MINI = "gpt-4o-mini"
-    GPT_4O = "gpt-4o"
+    # No OpenAI models - removed
 
 
 class QueryInput(BaseModel):
     session_id: Optional[str] = None
     question: str  # Mandatory field
-    model: ModelName = ModelName.GEMINI_2_0_FLASH  # Default value
+    model: str = "gemini-2.0-flash"  # Changed from ModelName to str to accept any value
+
+    # Validator to ensure model is a valid Gemini model
+    @field_validator('model')
+    @classmethod
+    def validate_model(cls, v):
+        # If not a Gemini model, default to gemini-2.0-flash
+        if not v.startswith("gemini"):
+            return "gemini-2.0-flash"
+        # If it's already a valid Gemini model, return as is
+        if v in [m.value for m in ModelName]:
+            return v
+        # If it's a Gemini model but not in our enum, default to gemini-2.0-flash
+        return "gemini-2.0-flash"
 
     model_config = {
         "json_schema_extra": {
@@ -36,7 +47,7 @@ class QueryInput(BaseModel):
 class QueryResponse(BaseModel):
     answer: str
     session_id: str
-    model: ModelName
+    model: str  # Changed from ModelName to str to match QueryInput
 
     model_config = {
         "json_schema_extra": {
