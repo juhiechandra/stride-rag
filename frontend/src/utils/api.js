@@ -1,10 +1,17 @@
-const API_BASE_URL = "http://localhost:8000"; // FastAPI default port, not the frontend port (5173)
+// Use the Vite proxy in development
+const API_BASE_URL = "/api";
 
 // Helper function to handle API responses
 const handleResponse = async(response) => {
     if (!response.ok) {
-        const error = await response.text();
-        throw new Error(error);
+        try {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || "API Error");
+        } catch {
+            // JSON parsing failed, use text instead
+            const error = await response.text();
+            throw new Error(error || "Unknown API Error");
+        }
     }
     return response.json();
 };
@@ -12,25 +19,46 @@ const handleResponse = async(response) => {
 // Chat API
 export const sendChatMessage = async(message, sessionId, model) => {
     try {
+        console.log("Sending chat message:", { message, sessionId, model });
+
+        // Ensure model is one of the supported models
+        const supportedModels = ["gemini-2.0-flash", "gemini-2.0-flash"];
+        const validModel = supportedModels.includes(model) ?
+            model :
+            "gemini-2.0-flash";
+
         const response = await fetch(`${API_BASE_URL}/chat`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
+                Accept: "application/json",
             },
+            mode: "cors",
             body: JSON.stringify({
                 question: message,
                 session_id: sessionId || null,
-                model: model || "gpt-4o", // default to gpt-4oif not specified
+                model: validModel,
             }),
         });
 
+        console.log("Response status:", response.status);
+
         if (!response.ok) {
-            const errorData = await response.json();
-            console.error("Server error:", errorData); // Log the error details
-            throw new Error(errorData.detail || "Failed to send message");
+            console.error("Response not OK:", response);
+            const errorText = await response.text();
+            console.error("Error text:", errorText);
+            try {
+                const errorData = JSON.parse(errorText);
+                throw new Error(errorData.detail || "Failed to send message");
+            } catch {
+                // JSON parsing failed, use text instead
+                throw new Error(errorText || "Failed to send message");
+            }
         }
 
-        return await response.json();
+        const data = await response.json();
+        console.log("Response data:", data);
+        return data;
     } catch (error) {
         console.error("Error sending message:", error);
         throw error;
@@ -59,7 +87,7 @@ export const uploadDocument = async(formData) => {
 
 export const listDocuments = async() => {
     try {
-        const response = await fetch(`${API_BASE_URL}/list-docs`);
+        const response = await fetch(`${API_BASE_URL}/documents`);
         return handleResponse(response);
     } catch (error) {
         console.error("List Documents API Error:", error);
@@ -81,6 +109,21 @@ export const deleteDocument = async(fileId) => {
         return handleResponse(response);
     } catch (error) {
         console.error("Delete API Error:", error);
+        throw error;
+    }
+};
+
+export const cleanupDocuments = async() => {
+    try {
+        const response = await fetch(`${API_BASE_URL}/cleanup-documents`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+        });
+        return handleResponse(response);
+    } catch (error) {
+        console.error("Cleanup Documents API Error:", error);
         throw error;
     }
 };

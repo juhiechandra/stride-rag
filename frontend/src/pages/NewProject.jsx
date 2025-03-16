@@ -1,6 +1,7 @@
 import styled from "styled-components";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { uploadDocument } from "../utils/api";
 
 const Container = styled.div`
   padding: 2rem;
@@ -113,6 +114,8 @@ export default function NewProject() {
     owner: "",
     summary: "",
   });
+  const [file, setFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
 
   const handleChange = (e) => {
@@ -121,6 +124,12 @@ export default function NewProject() {
       ...prev,
       [name]: value,
     }));
+  };
+
+  const handleFileChange = (e) => {
+    if (e.target.files && e.target.files[0]) {
+      setFile(e.target.files[0]);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -137,13 +146,27 @@ export default function NewProject() {
       return;
     }
 
+    if (!file) {
+      setError("Please select a document to upload");
+      return;
+    }
+
     try {
+      setUploading(true);
+
+      // Upload document to backend
+      const formDataObj = new FormData();
+      formDataObj.append("file", file);
+
+      const uploadResponse = await uploadDocument(formDataObj);
+
       // Here you would typically make an API call to create the project
       // For now, we'll simulate it with localStorage
       const projects = JSON.parse(localStorage.getItem("projects") || "[]");
       const newProject = {
         id: Date.now().toString(),
         ...formData,
+        fileId: uploadResponse.file_id, // Store the file ID from the backend
         created_at: new Date().toISOString(),
       };
 
@@ -155,6 +178,8 @@ export default function NewProject() {
     } catch (err) {
       setError("Failed to create project. Please try again.");
       console.error("Error creating project:", err);
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -216,13 +241,28 @@ export default function NewProject() {
           />
         </FormGroup>
 
+        <FormGroup>
+          <Label htmlFor="document">Upload Document *</Label>
+          <Input
+            type="file"
+            id="document"
+            name="document"
+            onChange={handleFileChange}
+            accept=".pdf"
+            required
+          />
+          <small style={{ color: "#9ca3af", marginTop: "0.25rem" }}>
+            Only PDF files are supported
+          </small>
+        </FormGroup>
+
         {error && <ErrorMessage>{error}</ErrorMessage>}
 
         <ButtonGroup>
-          <Button type="submit" primary>
-            Create Project
+          <Button type="submit" primary disabled={uploading}>
+            {uploading ? "Creating..." : "Create Project"}
           </Button>
-          <Button type="button" onClick={handleCancel}>
+          <Button type="button" onClick={handleCancel} disabled={uploading}>
             Cancel
           </Button>
         </ButtonGroup>

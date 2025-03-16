@@ -130,3 +130,35 @@ dmypy.json
 
 
 /rag
+m
+.env
+
+api/__pycache__
+api/chroma_db
+api/chroma_data
+api/chroma_data/
+api/chroma_data/db
+api/chroma_data/collections
+api/chroma_data/collections/
+
+
+frontend/node_modules
+frontend/dist
+frontend/.vscode
+frontend/.env
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+
+frontend/src/assets/images
+frontend/src/assets/videos
+frontend/src/assets/audio
+frontend/src/assets/documents
+frontend/src/assets/models
+frontend/src/assets/uploads
+frontend/src/assets/temp
+
+
+api/faiss_db
+
+api/uploaded_files
