@@ -3,7 +3,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.chains import create_history_aware_retriever, create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
-from chroma_utils import vectorstore
+from faiss_utils import vectorstore
 from dotenv import load_dotenv
 from logger import model_logger, error_logger, PerformanceTimer
 import os
@@ -38,32 +38,21 @@ def get_rag_chain(model="gemini-2.0-flash"):
             )
             model_logger.info("Retriever configured with MMR search")
 
-            # Initialize LLM based on model type
-            model_logger.info(f"Initializing LLM for model: {model}")
-            if model.startswith("gemini"):
-                model_logger.info(f"Using Gemini model: {model}")
-                llm = ChatGoogleGenerativeAI(
-                    model=model,
-                    temperature=0.7,
-                    top_k=40,
-                    max_output_tokens=2048
-                )
-            elif model.startswith("gpt"):
-                model_logger.info(f"Using OpenAI model: {model}")
-                llm = ChatOpenAI(
-                    model=model,
-                    temperature=0.7,
-                    max_tokens=2048
-                )
-            else:
+            # Initialize LLM - ONLY USE GEMINI MODELS
+            # Force model to be a Gemini model
+            if not model.startswith("gemini"):
                 model_logger.warning(
-                    f"Unknown model type: {model}, defaulting to gemini-2.0-flash")
-                llm = ChatGoogleGenerativeAI(
-                    model="gemini-2.0-flash",
-                    temperature=0.7,
-                    top_k=40,
-                    max_output_tokens=2048
-                )
+                    f"Non-Gemini model requested: {model}, forcing to gemini-2.0-flash")
+                model = "gemini-2.0-flash"
+
+            model_logger.info(f"Using Gemini model: {model}")
+            llm = ChatGoogleGenerativeAI(
+                model=model,
+                google_api_key=os.getenv("GEMINI_API_KEY"),
+                temperature=0.7,
+                top_k=40,
+                max_output_tokens=2048
+            )
 
             # Contextualization chain
             model_logger.info("Creating contextualization prompt")

@@ -22,13 +22,10 @@ export const sendChatMessage = async (message, sessionId, model) => {
     console.log("Sending chat message:", { message, sessionId, model });
 
     // Ensure model is one of the supported models
-    const supportedModels = [
-      "gemini-2.0-flash",
-      "gemini-2.0-pro",
-      "gpt-4o-mini",
-      "gpt-4o",
-    ];
-    const validModel = supportedModels.includes(model) ? model : "gpt-4o";
+    const supportedModels = ["gemini-2.0-flash", "gemini-2.0-pro"];
+    const validModel = supportedModels.includes(model)
+      ? model
+      : "gemini-2.0-flash";
 
     const response = await fetch(`${API_BASE_URL}/chat`, {
       method: "POST",
