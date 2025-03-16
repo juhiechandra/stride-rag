@@ -17,6 +17,8 @@ class QueryInput(BaseModel):
     session_id: Optional[str] = None
     question: str  # Mandatory field
     model: str = "gemini-2.0-flash"  # Changed from ModelName to str to accept any value
+    # Whether to use hybrid search (vector + BM25) or just vector search
+    use_hybrid_search: bool = True
 
     # Validator to ensure model is a valid Gemini model
     @field_validator('model')
@@ -37,7 +39,8 @@ class QueryInput(BaseModel):
                 {
                     "session_id": "some-uuid-here",
                     "question": "What is RAG?",
-                    "model": "gemini-2.0-flash"
+                    "model": "gemini-2.0-flash",
+                    "use_hybrid_search": True
                 }
             ]
         }
@@ -46,7 +49,7 @@ class QueryInput(BaseModel):
 
 class QueryResponse(BaseModel):
     answer: str
-    session_id: str
+    processing_time: float
     model: str  # Changed from ModelName to str to match QueryInput
 
     model_config = {
@@ -54,7 +57,7 @@ class QueryResponse(BaseModel):
             "examples": [
                 {
                     "answer": "RAG stands for Retrieval Augmented Generation...",
-                    "session_id": "some-uuid-here",
+                    "processing_time": 1.25,
                     "model": "gemini-2.0-flash"
                 }
             ]

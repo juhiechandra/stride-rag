@@ -109,45 +109,83 @@ async def upload_file(file: UploadFile = File(...)):
 
 @app.post("/chat")
 async def chat_endpoint(query: QueryInput) -> QueryResponse:
-    with PerformanceTimer(api_logger, f"chat_endpoint:{query.model}"):
-        session_id = query.session_id or str(uuid.uuid4())
-        api_logger.info(
-            f"Chat request: session={session_id}, model={query.model}")
+    """
+    Process a chat query using RAG.
 
-        try:
-            # Retrieve chat history
-            history = get_chat_history(session_id)
-            api_logger.info(
-                f"Retrieved chat history: {len(history)//2} messages")
+    Args:
+        query: The query input containing the question and chat history.
 
-            # Execute RAG chain
-            api_logger.info(
-                f"Executing RAG chain with query: '{query.question[:50]}...'")
-            rag_chain = get_rag_chain(query.model)
-            result = rag_chain.invoke({
+    Returns:
+        A response containing the answer and updated chat history.
+    """
+    try:
+        with PerformanceTimer(api_logger, f"chat_endpoint:{query.question[:30]}"):
+            api_logger.info(f"Received chat query: {query.question[:100]}...")
+
+            # Get chat history from database if session_id is provided
+            chat_history = []
+            if query.session_id:
+                api_logger.info(
+                    f"Getting chat history for session: {query.session_id}")
+                chat_history = get_chat_history(query.session_id)
+                api_logger.info(
+                    f"Retrieved {len(chat_history)} chat history items")
+
+            # Convert chat history to the format expected by LangChain
+            formatted_history = []
+            for item in chat_history:
+                formatted_history.append(("human", item["question"]))
+                formatted_history.append(("ai", item["answer"]))
+
+            # Get RAG chain with specified model and hybrid search option
+            use_hybrid_search = query.use_hybrid_search if hasattr(
+                query, 'use_hybrid_search') else True
+            chain = get_rag_chain(
+                model=query.model, use_hybrid_search=use_hybrid_search)
+
+            # Process query
+            api_logger.info(f"Processing query with model: {query.model}")
+            start_time = time.time()
+            response = chain.invoke({
                 "input": query.question,
-                "chat_history": history
+                "chat_history": formatted_history
             })
+            end_time = time.time()
+            processing_time = end_time - start_time
+            api_logger.info(
+                f"Query processed in {processing_time:.2f} seconds")
 
-            # Log interaction
-            insert_application_logs(
-                session_id=session_id,
-                user_query=query.question,
-                gpt_response=result["answer"],
-                model=query.model
-            )
-            api_logger.info(f"Interaction logged: session={session_id}")
+            # Extract answer
+            answer = response["answer"]
+            api_logger.info(f"Generated answer: {answer[:100]}...")
 
+            # Log to database if session_id is provided
+            if query.session_id:
+                api_logger.info(
+                    f"Logging chat to database for session: {query.session_id}")
+                insert_application_logs(
+                    session_id=query.session_id,
+                    question=query.question,
+                    answer=answer,
+                    model=query.model,
+                    processing_time=processing_time
+                )
+
+            # Return response
             return QueryResponse(
-                answer=result["answer"],
-                session_id=session_id,
+                answer=answer,
+                processing_time=processing_time,
                 model=query.model
             )
 
-        except Exception as e:
-            error_logger.error(
-                f"Error processing chat request: {str(e)}", exc_info=True)
-            raise HTTPException(500, f"Processing error: {str(e)}")
+    except Exception as e:
+        error_msg = f"Error processing chat query: {str(e)}"
+        api_logger.error(error_msg)
+        error_logger.error(error_msg, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing query: {str(e)}"
+        )
 
 
 @app.get("/documents", response_model=List[DocumentInfo])
