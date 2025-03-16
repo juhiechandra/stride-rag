@@ -25,6 +25,45 @@ def get_db_connection():
         raise
 
 
+def check_column_exists(table_name, column_name):
+    """Check if a column exists in a table."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(f"PRAGMA table_info({table_name})")
+        columns = cursor.fetchall()
+        conn.close()
+
+        for column in columns:
+            if column['name'] == column_name:
+                return True
+        return False
+    except Exception as e:
+        error_msg = f"Failed to check column existence: {str(e)}"
+        db_logger.error(error_msg)
+        error_logger.error(error_msg, exc_info=True)
+        return False
+
+
+def add_column_if_not_exists(table_name, column_name, column_type):
+    """Add a column to a table if it doesn't exist."""
+    try:
+        if not check_column_exists(table_name, column_name):
+            conn = get_db_connection()
+            conn.execute(
+                f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
+            conn.commit()
+            conn.close()
+            db_logger.info(f"Added column {column_name} to table {table_name}")
+            return True
+        return False
+    except Exception as e:
+        error_msg = f"Failed to add column {column_name} to table {table_name}: {str(e)}"
+        db_logger.error(error_msg)
+        error_logger.error(error_msg, exc_info=True)
+        return False
+
+
 def create_application_logs():
     with PerformanceTimer(db_logger, "create_application_logs"):
         try:
@@ -38,6 +77,11 @@ def create_application_logs():
                              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
             conn.close()
             db_logger.info("Application logs table created or verified")
+
+            # Add processing_time column if it doesn't exist
+            add_column_if_not_exists(
+                "application_logs", "processing_time", "REAL")
+
         except Exception as e:
             error_msg = f"Failed to create application logs table: {str(e)}"
             db_logger.error(error_msg)
@@ -45,22 +89,26 @@ def create_application_logs():
             raise
 
 
-def insert_application_logs(session_id, user_query, gpt_response, model):
+def insert_application_logs(session_id, question, answer, model, processing_time=0.0):
     with PerformanceTimer(db_logger, f"insert_logs:{session_id}"):
         try:
+            # Ensure the processing_time column exists
+            add_column_if_not_exists(
+                "application_logs", "processing_time", "REAL")
+
             conn = get_db_connection()
-            conn.execute('INSERT INTO application_logs (session_id, user_query, gpt_response, model) VALUES (?, ?, ?, ?)',
-                         (session_id, user_query, gpt_response, model))
+            conn.execute('''INSERT INTO application_logs 
+                            (session_id, user_query, gpt_response, model, processing_time) 
+                            VALUES (?, ?, ?, ?, ?)''',
+                         (session_id, question, answer, model, processing_time))
             conn.commit()
             conn.close()
-            db_logger.info(
-                f"Inserted log for session {session_id}, model {model}")
-            return True
+            db_logger.info(f"Inserted log for session: {session_id}")
         except Exception as e:
             error_msg = f"Failed to insert application log: {str(e)}"
             db_logger.error(error_msg)
             error_logger.error(error_msg, exc_info=True)
-            return False
+            raise
 
 
 def get_chat_history(session_id):
@@ -70,16 +118,16 @@ def get_chat_history(session_id):
             cursor = conn.cursor()
             cursor.execute(
                 'SELECT user_query, gpt_response FROM application_logs WHERE session_id = ? ORDER BY created_at', (session_id,))
-            messages = []
+            history = []
             for row in cursor.fetchall():
-                messages.extend([
-                    {"role": "human", "content": row['user_query']},
-                    {"role": "ai", "content": row['gpt_response']}
-                ])
+                history.append({
+                    "question": row['user_query'],
+                    "answer": row['gpt_response']
+                })
             conn.close()
             db_logger.info(
-                f"Retrieved {len(messages)//2} messages for session {session_id}")
-            return messages
+                f"Retrieved {len(history)} messages for session {session_id}")
+            return history
         except Exception as e:
             error_msg = f"Failed to retrieve chat history for session {session_id}: {str(e)}"
             db_logger.error(error_msg)

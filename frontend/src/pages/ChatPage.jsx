@@ -421,8 +421,9 @@ export default function ChatPage() {
         `session_${Date.now()}`;
       localStorage.setItem(`chat_session_${projectId}`, sessionId);
 
-      // Use the selected model or default to gpt-4o
-      const selectedModel = localStorage.getItem("selectedModel") || "gpt-4o";
+      // Use the selected model or default to gemini-2.0-flash
+      const selectedModel =
+        localStorage.getItem("selectedModel") || "gemini-2.0-flash";
 
       console.log("Sending message to API:", {
         message,
