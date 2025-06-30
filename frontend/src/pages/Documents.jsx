@@ -1,202 +1,153 @@
-import { useState, useEffect } from "react";
-import styled from "styled-components";
-import axios from "axios";
+import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { FileText, Trash2, BarChart2 } from "react-feather";
-import { listDocuments, deleteDocument, cleanupDocuments } from "../utils/api";
+import styled from "styled-components";
 
 const Container = styled.div`
+  max-width: 1200px;
+  margin: 0 auto;
   padding: 2rem;
-  color: #e0e0e0;
 `;
 
 const Title = styled.h1`
-  font-size: 2.5rem;
-  font-weight: bold;
+  color: #333;
   margin-bottom: 2rem;
-  color: #e0e0e0;
+  text-align: center;
 `;
 
-const DocumentsGrid = styled.div`
+const DocumentGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 1.5rem;
+  gap: 2rem;
   margin-top: 2rem;
 `;
 
 const DocumentCard = styled.div`
-  background: #2c2c2c;
-  border-radius: 8px;
+  background: white;
+  border-radius: 12px;
   padding: 1.5rem;
-  color: #e0e0e0;
-  transition: transform 0.2s, box-shadow 0.2s;
-  position: relative;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e1e5e9;
+  transition: all 0.3s ease;
 
   &:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
   }
 `;
 
-const DocumentTitle = styled.h3`
-  margin: 0 0 0.5rem 0;
-  font-size: 1.25rem;
+const DocumentName = styled.h3`
+  color: #333;
+  margin: 0 0 1rem 0;
+  font-size: 1.2rem;
+  word-break: break-word;
+`;
+
+const DocumentMeta = styled.div`
+  color: #666;
+  font-size: 0.9rem;
+  margin-bottom: 1.5rem;
+`;
+
+const ButtonGroup = styled.div`
   display: flex;
-  align-items: center;
   gap: 0.5rem;
+  flex-wrap: wrap;
 `;
 
-const DocumentDate = styled.div`
-  margin-top: 1rem;
-  font-size: 0.875rem;
-  color: #9ca3af;
-`;
-
-const ActionButtons = styled.div`
-  display: flex;
-  gap: 0.5rem;
-  margin-top: 1.5rem;
-`;
-
-const ActionButton = styled.button`
-  background: #374151;
-  color: #e0e0e0;
-  border: none;
-  padding: 0.5rem;
-  border-radius: 0.25rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background-color 0.2s;
-
-  &:hover {
-    background: #4b5563;
-  }
-`;
-
-const BreakdownButton = styled(Link)`
-  background: #3b82f6;
+const Button = styled.button`
+  background: ${props => props.danger ? '#dc3545' : '#007bff'};
   color: white;
   border: none;
   padding: 0.5rem 1rem;
-  border-radius: 0.25rem;
+  border-radius: 6px;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  text-decoration: none;
-  font-size: 0.875rem;
-  transition: background-color 0.2s;
+  font-size: 0.9rem;
+  transition: background 0.3s ease;
 
   &:hover {
-    background: #2563eb;
-  }
-`;
-
-const UploadContainer = styled.div`
-  margin-bottom: 2rem;
-  padding: 1.5rem;
-  background: #2c2c2c;
-  border-radius: 0.5rem;
-`;
-
-const UploadForm = styled.form`
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-`;
-
-const ButtonsContainer = styled.div`
-  display: flex;
-  gap: 1rem;
-  align-items: center;
-`;
-
-const CleanupButton = styled.button`
-  background: #ef4444;
-  color: white;
-  border: none;
-  padding: 0.75rem 1rem;
-  border-radius: 0.25rem;
-  cursor: pointer;
-  font-weight: 500;
-  transition: background-color 0.2s;
-
-  &:hover {
-    background: #dc2626;
+    background: ${props => props.danger ? '#c82333' : '#0056b3'};
   }
 
   &:disabled {
-    background: #6b7280;
-    cursor: not-allowed;
-  }
-`;
-
-const UploadInput = styled.input`
-  background: #1e1e1e;
-  border: 1px solid #4b5563;
-  padding: 0.75rem;
-  border-radius: 0.25rem;
-  color: #e0e0e0;
-  width: 100%;
-`;
-
-const UploadButton = styled.button`
-  background: #10b981;
-  color: white;
-  border: none;
-  padding: 0.75rem 1rem;
-  border-radius: 0.25rem;
-  cursor: pointer;
-  font-weight: 500;
-  transition: background-color 0.2s;
-  align-self: flex-start;
-
-  &:hover {
-    background: #059669;
-  }
-
-  &:disabled {
-    background: #6b7280;
+    background: #ccc;
     cursor: not-allowed;
   }
 `;
 
 const LoadingSpinner = styled.div`
-  border: 3px solid rgba(255, 255, 255, 0.3);
-  border-radius: 50%;
-  border-top: 3px solid #10b981;
-  width: 24px;
-  height: 24px;
-  animation: spin 1s linear infinite;
-  margin: 0 auto;
-
-  @keyframes spin {
-    0% {
-      transform: rotate(0deg);
-    }
-    100% {
-      transform: rotate(360deg);
-    }
-  }
+  text-align: center;
+  padding: 2rem;
+  color: #666;
 `;
 
 const ErrorMessage = styled.div`
-  background-color: rgba(220, 38, 38, 0.1);
-  color: #ef4444;
-  padding: 0.75rem;
-  border-radius: 0.25rem;
-  margin-top: 1rem;
+  background: #f8d7da;
+  color: #721c24;
+  padding: 1rem;
+  border-radius: 6px;
+  margin: 1rem 0;
+  border: 1px solid #f5c6cb;
 `;
+
+const SuccessMessage = styled.div`
+  background: #d4edda;
+  color: #155724;
+  padding: 1rem;
+  border-radius: 6px;
+  margin: 1rem 0;
+  border: 1px solid #c3e6cb;
+`;
+
+const EmptyState = styled.div`
+  text-align: center;
+  padding: 3rem;
+  color: #666;
+`;
+
+const BackButton = styled(Link)`
+  display: inline-block;
+  background: #6c757d;
+  color: white;
+  text-decoration: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  margin-bottom: 2rem;
+  transition: background 0.3s ease;
+
+  &:hover {
+    background: #545b62;
+  }
+`;
+
+const CleanupButton = styled.button`
+  background: #dc3545;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-bottom: 2rem;
+  transition: background 0.3s ease;
+
+  &:hover {
+    background: #c82333;
+  }
+
+  &:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+  }
+`;
+
+const API_BASE_URL = "http://localhost:8000";
 
 const Documents = () => {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [uploadLoading, setUploadLoading] = useState(false);
-  const [cleanupLoading, setCleanupLoading] = useState(false);
-  const [file, setFile] = useState(null);
   const [error, setError] = useState(null);
+  const [success, setSuccess] = useState("");
+  const [deleting, setDeleting] = useState(null);
+  const [cleaningUp, setCleaningUp] = useState(false);
 
   useEffect(() => {
     fetchDocuments();
@@ -205,161 +156,133 @@ const Documents = () => {
   const fetchDocuments = async () => {
     try {
       setLoading(true);
-      const docs = await listDocuments();
-      setDocuments(docs);
+      const response = await fetch(`${API_BASE_URL}/documents`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch documents: ${response.status}`);
+      }
+      const data = await response.json();
+      setDocuments(data);
+      setError(null);
     } catch (err) {
+      setError(err.message);
       console.error("Error fetching documents:", err);
-      setError("Failed to load documents. Please try again later.");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleFileChange = (e) => {
-    setFile(e.target.files[0]);
-    setError(null);
-  };
-
-  const handleUpload = async (e) => {
-    e.preventDefault();
-    if (!file) {
-      setError("Please select a file to upload");
+  const deleteDocument = async (fileId, filename) => {
+    if (!window.confirm(`Are you sure you want to delete "${filename}"?`)) {
       return;
     }
 
     try {
-      setUploadLoading(true);
-      setError(null);
-
-      const formData = new FormData();
-      formData.append("file", file);
-
-      await axios.post("http://localhost:8000/upload-doc", formData, {
+      setDeleting(fileId);
+      const response = await fetch(`${API_BASE_URL}/delete-doc`, {
+        method: "POST",
         headers: {
-          "Content-Type": "multipart/form-data",
+          "Content-Type": "application/json",
         },
+        body: JSON.stringify({ file_id: fileId }),
       });
 
-      setFile(null);
-      fetchDocuments();
-    } catch (err) {
-      console.error("Error uploading document:", err);
-      setError(
-        err.response?.data?.message ||
-          "Failed to upload document. Please try again."
-      );
-    } finally {
-      setUploadLoading(false);
-    }
-  };
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to delete document");
+      }
 
-  const handleDelete = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this document?")) {
-      return;
-    }
-
-    try {
-      await deleteDocument(id);
-      fetchDocuments();
+      setSuccess(`Document "${filename}" deleted successfully`);
+      fetchDocuments(); // Refresh the list
+      setTimeout(() => setSuccess(""), 3000);
     } catch (err) {
+      setError(err.message);
       console.error("Error deleting document:", err);
-      setError("Failed to delete document. Please try again.");
+    } finally {
+      setDeleting(null);
     }
   };
 
-  const handleCleanup = async () => {
-    if (
-      !window.confirm(
-        "This will delete all documents except the most recent one. Are you sure?"
-      )
-    ) {
+  const cleanupAllDocuments = async () => {
+    if (!window.confirm("Are you sure you want to delete ALL documents? This action cannot be undone.")) {
       return;
     }
 
     try {
-      setCleanupLoading(true);
-      setError(null);
+      setCleaningUp(true);
+      const response = await fetch(`${API_BASE_URL}/cleanup-documents`, {
+        method: "POST",
+      });
 
-      const response = await cleanupDocuments();
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to cleanup documents");
+      }
 
-      console.log("Cleanup response:", response);
-
-      // Show success message
-      alert(
-        `Cleanup successful! Kept document: ${response.kept_document}. Deleted ${response.deleted_count} documents.`
-      );
-
-      // Refresh the documents list
-      fetchDocuments();
+      setSuccess("All documents cleaned up successfully");
+      fetchDocuments(); // Refresh the list
+      setTimeout(() => setSuccess(""), 3000);
     } catch (err) {
+      setError(err.message);
       console.error("Error cleaning up documents:", err);
-      setError(
-        err.response?.data?.message ||
-          "Failed to clean up documents. Please try again."
-      );
     } finally {
-      setCleanupLoading(false);
+      setCleaningUp(false);
     }
   };
 
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleString();
-  };
+  if (loading) {
+    return (
+      <Container>
+        <LoadingSpinner>Loading documents...</LoadingSpinner>
+      </Container>
+    );
+  }
 
   return (
     <Container>
-      <Title>Documents</Title>
+      <BackButton to="/">← Back to Home</BackButton>
+      
+      <Title>Document Library</Title>
 
-      <UploadContainer>
-        <h2>Upload New Document</h2>
-        <UploadForm onSubmit={handleUpload}>
-          <UploadInput
-            type="file"
-            accept=".pdf,.doc,.docx,.txt"
-            onChange={handleFileChange}
-          />
-          {error && <ErrorMessage>{error}</ErrorMessage>}
-          <ButtonsContainer>
-            <UploadButton type="submit" disabled={uploadLoading || !file}>
-              {uploadLoading ? <LoadingSpinner /> : "Upload Document"}
-            </UploadButton>
-            <CleanupButton
-              type="button"
-              onClick={handleCleanup}
-              disabled={cleanupLoading || documents.length <= 1}
-            >
-              {cleanupLoading ? <LoadingSpinner /> : "Clean Up Documents"}
-            </CleanupButton>
-          </ButtonsContainer>
-        </UploadForm>
-      </UploadContainer>
+      {error && <ErrorMessage>{error}</ErrorMessage>}
+      {success && <SuccessMessage>{success}</SuccessMessage>}
 
-      {loading ? (
-        <LoadingSpinner />
+      {documents.length > 0 && (
+        <CleanupButton
+          onClick={cleanupAllDocuments}
+          disabled={cleaningUp}
+        >
+          {cleaningUp ? "Cleaning up..." : "Delete All Documents"}
+        </CleanupButton>
+      )}
+
+      {documents.length === 0 ? (
+        <EmptyState>
+          <h3>No documents found</h3>
+          <p>Upload some documents to get started!</p>
+        </EmptyState>
       ) : (
-        <DocumentsGrid>
+        <DocumentGrid>
           {documents.map((doc) => (
             <DocumentCard key={doc.id}>
-              <DocumentTitle>
-                <FileText size={20} />
-                {doc.filename}
-              </DocumentTitle>
-              <DocumentDate>
-                Uploaded: {formatDate(doc.upload_timestamp)}
-              </DocumentDate>
-              <ActionButtons>
-                <ActionButton onClick={() => handleDelete(doc.id)}>
-                  <Trash2 size={18} />
-                </ActionButton>
-                <BreakdownButton to={`/document/breakdown/${doc.id}`}>
-                  <BarChart2 size={18} />
-                  Generate Breakdown
-                </BreakdownButton>
-              </ActionButtons>
+              <DocumentName>{doc.filename}</DocumentName>
+              <DocumentMeta>
+                <div>ID: {doc.id}</div>
+                <div>
+                  Uploaded: {new Date(doc.upload_timestamp).toLocaleDateString()}
+                </div>
+              </DocumentMeta>
+              <ButtonGroup>
+                <Button
+                  danger
+                  onClick={() => deleteDocument(doc.id, doc.filename)}
+                  disabled={deleting === doc.id}
+                >
+                  {deleting === doc.id ? "Deleting..." : "Delete"}
+                </Button>
+              </ButtonGroup>
             </DocumentCard>
           ))}
-        </DocumentsGrid>
+        </DocumentGrid>
       )}
     </Container>
   );

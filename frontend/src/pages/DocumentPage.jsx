@@ -1,3 +1,4 @@
+import React from "react";
 import styled from "styled-components";
 import { useState } from "react";
 import {
@@ -5,29 +6,24 @@ import {
   Routes,
   Route,
   useNavigate,
-  useParams,
   Navigate,
 } from "react-router-dom";
 import { ArrowLeft } from "react-feather";
 import ChatPage from "./ChatPage";
-import Use from "./Use";
-import Breakdown from "./Breakdown";
-import Stride from "./Stride";
-import AttackTree from "./AttackTree";
-import TrustBoundaries from "./TrustBoundaries";
-import DataFlowDiagrams from "./DataFlowDiagrams";
+import UploadPage from "./UploadPage";
 
 const PageContainer = styled.div`
   display: flex;
   min-height: 100vh;
-  background: #1e1e1e;
+  background: #f5f5f5;
 `;
 
-const ProjectSidebar = styled.div`
+const Sidebar = styled.div`
   width: 280px;
-  background: #2c2c2c;
-  border-right: 1px solid #374151;
+  background: white;
+  border-right: 1px solid #e1e5e9;
   padding: 1rem;
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.1);
 `;
 
 const MainContent = styled.div`
@@ -49,18 +45,18 @@ const MenuItem = styled.li`
 const MenuLink = styled(Link)`
   display: block;
   padding: 0.75rem 1rem;
-  color: #e0e0e0;
+  color: #333;
   text-decoration: none;
   border-radius: 0.5rem;
   transition: background-color 0.2s;
 
   &:hover {
-    background: #3b3b3b;
+    background: #f0f0f0;
   }
 
   &.active {
-    background: #4b4b4b;
-    color: #a855f7;
+    background: #007bff;
+    color: white;
   }
 `;
 
@@ -74,7 +70,7 @@ const Header = styled.div`
 const BackButton = styled.button`
   background: none;
   border: none;
-  color: #e0e0e0;
+  color: #333;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -84,104 +80,59 @@ const BackButton = styled.button`
   margin-right: 1rem;
 
   &:hover {
-    background: #3b3b3b;
+    background: #f0f0f0;
   }
 `;
 
+const Title = styled.h2`
+  color: #333;
+  margin: 0;
+`;
+
 export default function DocumentPage() {
-  const [activeItem, setActiveItem] = useState("how-to-use");
+  const [activeItem, setActiveItem] = useState("upload");
   const navigate = useNavigate();
-  const { projectId } = useParams();
 
   const handleBack = () => {
-    navigate("/projects");
+    navigate("/");
   };
 
   return (
     <PageContainer>
-      <ProjectSidebar>
+      <Sidebar>
         <Header>
           <BackButton onClick={handleBack}>
             <ArrowLeft size={20} />
-            Back to Projects
+            Back to Home
           </BackButton>
         </Header>
+        <Title>RAG System</Title>
         <MenuList>
           <MenuItem>
             <MenuLink
-              to={`/project/${projectId}/how-to-use`}
-              className={activeItem === "how-to-use" ? "active" : ""}
-              onClick={() => setActiveItem("how-to-use")}
+              to="/document/upload"
+              className={activeItem === "upload" ? "active" : ""}
+              onClick={() => setActiveItem("upload")}
             >
               Upload Document
             </MenuLink>
           </MenuItem>
           <MenuItem>
             <MenuLink
-              to={`/project/${projectId}/chat`}
+              to="/document/chat"
               className={activeItem === "chat" ? "active" : ""}
               onClick={() => setActiveItem("chat")}
             >
-              Chat Section
-            </MenuLink>
-          </MenuItem>
-          <MenuItem>
-            <MenuLink
-              to={`/project/${projectId}/components`}
-              className={activeItem === "components" ? "active" : ""}
-              onClick={() => setActiveItem("components")}
-            >
-              List of Components
-            </MenuLink>
-          </MenuItem>
-          <MenuItem>
-            <MenuLink
-              to={`/project/${projectId}/stride`}
-              className={activeItem === "stride" ? "active" : ""}
-              onClick={() => setActiveItem("stride")}
-            >
-              Generate - STRIDE
-            </MenuLink>
-          </MenuItem>
-          <MenuItem>
-            <MenuLink
-              to={`/project/${projectId}/attack-tree`}
-              className={activeItem === "attack-tree" ? "active" : ""}
-              onClick={() => setActiveItem("attack-tree")}
-            >
-              Attack Tree
-            </MenuLink>
-          </MenuItem>
-          <MenuItem>
-            <MenuLink
-              to={`/project/${projectId}/trust-boundaries`}
-              className={activeItem === "trust-boundaries" ? "active" : ""}
-              onClick={() => setActiveItem("trust-boundaries")}
-            >
-              Trust Boundaries
-            </MenuLink>
-          </MenuItem>
-          <MenuItem>
-            <MenuLink
-              to={`/project/${projectId}/data-flow-diagrams`}
-              className={activeItem === "data-flow-diagrams" ? "active" : ""}
-              onClick={() => setActiveItem("data-flow-diagrams")}
-            >
-              Data Flow Diagrams
+              Chat with Documents
             </MenuLink>
           </MenuItem>
         </MenuList>
-      </ProjectSidebar>
+      </Sidebar>
       <MainContent>
         <Routes>
-          <Route path="how-to-use" element={<Use />} />
+          <Route path="upload" element={<UploadPage />} />
           <Route path="chat" element={<ChatPage />} />
-          <Route path="components" element={<Breakdown />} />
-          <Route path="stride" element={<Stride />} />
-          <Route path="attack-tree" element={<AttackTree />} />
-          <Route path="trust-boundaries" element={<TrustBoundaries />} />
-          <Route path="data-flow-diagrams" element={<DataFlowDiagrams />} />
-          <Route path="*" element={<Navigate to="how-to-use" replace />} />
+          <Route path="*" element={<Navigate to="upload" replace />} />
         </Routes>
       </MainContent>
     </PageContainer>

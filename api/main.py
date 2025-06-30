@@ -2,11 +2,10 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request, sta
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
-from pydantic_models import QueryInput, QueryResponse, DocumentInfo, DeleteFileRequest, DocumentBreakdownRequest, DocumentBreakdownResponse
+from pydantic_models import QueryInput, QueryResponse, DocumentInfo, DeleteFileRequest
 from faiss_utils import index_document_to_faiss, delete_doc_from_faiss, clean_faiss_db_except_current
 from langchain_utils import get_rag_chain
 from db_utils import get_chat_history, insert_application_logs, insert_document_record, delete_document_record, get_all_documents
-from breakdown import analyze_document
 from logger import api_logger, error_logger, PerformanceTimer
 import uuid
 import shutil
@@ -19,8 +18,8 @@ import sqlite3
 UPLOAD_DIR = "./uploaded_files"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-app = FastAPI(title="Multimodal RAG API",
-              description="A Retrieval Augmented Generation system with multimodal capabilities",
+app = FastAPI(title="Simple RAG API",
+              description="A simple Retrieval Augmented Generation chatbot",
               version="1.0.0")
 
 # Add CORS middleware
@@ -190,11 +189,8 @@ async def chat_endpoint(query: QueryInput) -> QueryResponse:
                 formatted_history.append(("human", item["question"]))
                 formatted_history.append(("ai", item["answer"]))
 
-            # Get RAG chain with specified model and hybrid search option
-            use_hybrid_search = query.use_hybrid_search if hasattr(
-                query, 'use_hybrid_search') else True
-            chain = get_rag_chain(
-                model=query.model, use_hybrid_search=use_hybrid_search)
+            # Get RAG chain with specified model
+            chain = get_rag_chain(model=query.model)
 
             # Process query
             api_logger.info(f"Processing query with model: {query.model}")
@@ -312,98 +308,6 @@ async def delete_document(req: DeleteFileRequest):
             return JSONResponse(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 content={"message": error_msg, "error_id": error_id}
-            )
-
-
-@app.post("/document/analyze", response_model=DocumentBreakdownResponse)
-async def analyze_document_endpoint(req: DocumentBreakdownRequest):
-    """Analyze a document and generate a structured breakdown."""
-    with PerformanceTimer(api_logger, f"analyze_document:{req.file_id}"):
-        try:
-            # Validate file_id
-            conn = sqlite3.connect("rag_app.db")
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT filename FROM document_store WHERE id = ?", (req.file_id,))
-            document = cursor.fetchone()
-            conn.close()
-
-            if not document:
-                error_msg = f"Document with ID {req.file_id} not found in database"
-                api_logger.error(error_msg)
-                return JSONResponse(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    content={"status": "error", "message": error_msg}
-                )
-
-            # Check if file exists in upload directory
-            filename = document["filename"]
-            upload_path = os.path.join(
-                UPLOAD_DIR, f"doc-{req.file_id}-{filename}")
-
-            if not os.path.exists(upload_path):
-                error_msg = f"Document file not found at expected path: {upload_path}"
-                api_logger.error(error_msg)
-                return JSONResponse(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    content={"status": "error", "message": error_msg}
-                )
-
-            # Log file details
-            file_size = os.path.getsize(upload_path)
-            api_logger.info(f"Document file size: {file_size} bytes")
-
-            # Call the analyze_document function
-            api_logger.info(
-                f"Calling analyze_document for file ID {req.file_id} with model {req.model}")
-            breakdown = analyze_document(req.file_id, req.model)
-
-            # Check if there was an error
-            if "error" in breakdown:
-                error_msg = breakdown["error"]
-                api_logger.error(error_msg)
-                return JSONResponse(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    content={"status": "error", "message": error_msg}
-                )
-
-            # Validate the breakdown structure
-            try:
-                # Check if all required fields are present
-                required_fields = ["major_components",
-                                   "diagrams", "api_contracts", "pii_data"]
-                missing_fields = [
-                    field for field in required_fields if field not in breakdown]
-
-                if missing_fields:
-                    error_msg = f"Breakdown response is missing required fields: {', '.join(missing_fields)}"
-                    api_logger.error(error_msg)
-                    return JSONResponse(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        content={"status": "error", "message": error_msg}
-                    )
-
-                api_logger.info(
-                    f"Document {req.file_id} analyzed successfully")
-                return breakdown
-            except Exception as validation_error:
-                error_msg = f"Error validating breakdown response: {str(validation_error)}"
-                api_logger.error(error_msg)
-                return JSONResponse(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    content={"status": "error", "message": error_msg}
-                )
-        except Exception as e:
-            error_id = str(uuid.uuid4())
-            error_msg = f"Error analyzing document: {str(e)}"
-            api_logger.error(f"{error_msg} (ID: {error_id})")
-            error_logger.error(
-                f"Error ID {error_id}: {error_msg}", exc_info=True)
-            return JSONResponse(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                content={"status": "error",
-                         "message": error_msg, "error_id": error_id}
             )
 
 

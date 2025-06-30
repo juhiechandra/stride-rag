@@ -6,7 +6,6 @@ from langchain_core.documents import Document
 import fitz  # PyMuPDF
 import pdfplumber
 import google.generativeai as genai
-from openai import OpenAI
 import os
 import base64
 from datetime import datetime
@@ -22,8 +21,7 @@ load_dotenv()
 
 # Configure APIs
 model_logger.info("Configuring API clients")
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+genai.configure(api_key=os.getenv("GEMINI_KEY"))
 
 # Initialize FAISS
 faiss_db_path = "./faiss_db"
@@ -40,7 +38,7 @@ file_id_mapping = {}
 try:
     embedding_function = GoogleGenerativeAIEmbeddings(
         model="models/embedding-001",
-        google_api_key=os.getenv("GEMINI_API_KEY"),
+        google_api_key=os.getenv("GEMINI_KEY"),
         task_type="retrieval_document"
     )
     model_logger.info("Embedding function initialized")
@@ -278,16 +276,13 @@ def resize_image(image_path: str, max_width: int = 800, max_height: int = 800, q
 
 
 def get_image_summaries(images: List[Dict]) -> List[Document]:
-    """Generate summaries for images using OpenAI GPT-4o"""
+    """Generate summaries for images using Gemini 2.5 Flash with vision capabilities"""
     with PerformanceTimer(model_logger, f"get_image_summaries:{len(images)} images"):
         summaries = []
         for img in images:
             try:
                 # Resize image to reduce token usage
                 image_bytes = resize_image(img['path'])
-
-                # Convert to base64 for API
-                image_base64 = base64.b64encode(image_bytes).decode('utf-8')
 
                 # Log the size reduction
                 original_size = os.path.getsize(img['path'])
@@ -297,24 +292,21 @@ def get_image_summaries(images: List[Dict]) -> List[Document]:
                 model_logger.info(
                     f"Image resized from {original_size/1024:.1f}KB to {resized_size/1024:.1f}KB ({reduction_percent:.1f}% reduction)")
 
-                # Get summary from OpenAI GPT-4o
-                response = client.chat.completions.create(
-                    model="gpt-4o",
-                    messages=[
-                        {"role": "system", "content": "You are a detailed image analyzer. Describe this image comprehensively, focusing on any text, diagrams, charts, or important visual elements."},
-                        {"role": "user", "content": [
-                            {"type": "text", "text": "Describe this image in detail, focusing on any text, diagrams, charts, or important visual elements:"},
-                            {"type": "image_url", "image_url": {
-                                "url": f"data:image/jpeg;base64,{image_base64}"
-                            }}
-                        ]}
-                    ],
-                    max_tokens=1000
-                )
+                # Create Gemini model instance
+                model = genai.GenerativeModel('gemini-2.5-flash')
 
-                summary = response.choices[0].message.content
+                # Load image
+                pil_image = Image.open(BytesIO(image_bytes))
+
+                # Get summary from Gemini 2.5 Flash
+                response = model.generate_content([
+                    "You are a detailed image analyzer. Describe this image comprehensively, focusing on any text, diagrams, charts, or important visual elements.",
+                    pil_image
+                ])
+
+                summary = response.text
                 model_logger.info(
-                    f"Generated summary for image on page {img['page']} using GPT-4o")
+                    f"Generated summary for image on page {img['page']} using Gemini 2.5 Flash")
 
                 # Create document
                 doc = Document(

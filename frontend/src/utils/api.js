@@ -1,129 +1,90 @@
 // Use the Vite proxy in development
-const API_BASE_URL = "/api";
+const API_BASE_URL = "http://localhost:8000";
+
+// Supported models configuration
+const supportedModels = ["gemini-2.5-flash"];
+const defaultModel = localStorage.getItem("selectedModel") || "gemini-2.5-flash";
 
 // Helper function to handle API responses
-const handleResponse = async(response) => {
+const handleApiResponse = async (response) => {
     if (!response.ok) {
+        const errorData = await response.text();
+        let errorMessage;
         try {
-            const errorData = await response.json();
-            throw new Error(errorData.detail || "API Error");
+            const parsedError = JSON.parse(errorData);
+            errorMessage = parsedError.message || parsedError.detail || `HTTP ${response.status}`;
         } catch {
-            // JSON parsing failed, use text instead
-            const error = await response.text();
-            throw new Error(error || "Unknown API Error");
+            errorMessage = errorData || `HTTP ${response.status}`;
         }
+        throw new Error(errorMessage);
     }
     return response.json();
 };
 
-// Chat API
-export const sendChatMessage = async(message, sessionId, model) => {
-    try {
-        console.log("Sending chat message:", { message, sessionId, model });
+// Upload a document
+export const uploadDocument = async (file) => {
+    const formData = new FormData();
+    formData.append("file", file);
 
+    const response = await fetch(`${API_BASE_URL}/upload-doc`, {
+        method: "POST",
+        body: formData,
+    });
+
+    return handleApiResponse(response);
+};
+
+// Send a chat message
+export const sendMessage = async (message, sessionId = null, model = defaultModel) => {
+    try {
         // Ensure model is one of the supported models
-        const supportedModels = ["gemini-2.0-flash", "gemini-2.0-flash"];
-        const validModel = supportedModels.includes(model) ?
-            model :
-            "gemini-2.0-flash";
+        const validModel = supportedModels.includes(model) ? model : defaultModel;
 
         const response = await fetch(`${API_BASE_URL}/chat`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                Accept: "application/json",
             },
-            mode: "cors",
             body: JSON.stringify({
                 question: message,
-                session_id: sessionId || null,
+                session_id: sessionId,
                 model: validModel,
             }),
         });
 
-        console.log("Response status:", response.status);
-
-        if (!response.ok) {
-            console.error("Response not OK:", response);
-            const errorText = await response.text();
-            console.error("Error text:", errorText);
-            try {
-                const errorData = JSON.parse(errorText);
-                throw new Error(errorData.detail || "Failed to send message");
-            } catch {
-                // JSON parsing failed, use text instead
-                throw new Error(errorText || "Failed to send message");
-            }
-        }
-
-        const data = await response.json();
-        console.log("Response data:", data);
-        return data;
+        return handleApiResponse(response);
     } catch (error) {
         console.error("Error sending message:", error);
         throw error;
     }
 };
 
-// Document APIs
-export const uploadDocument = async(formData) => {
-    try {
-        const response = await fetch(`${API_BASE_URL}/upload-doc`, {
-            method: "POST",
-            body: formData,
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.detail || "Upload failed");
-        }
-
-        return await response.json();
-    } catch (error) {
-        console.error("Error uploading document:", error);
-        throw error;
-    }
+// List all documents
+export const listDocuments = async () => {
+    const response = await fetch(`${API_BASE_URL}/documents`);
+    return handleApiResponse(response);
 };
 
-export const listDocuments = async() => {
-    try {
-        const response = await fetch(`${API_BASE_URL}/documents`);
-        return handleResponse(response);
-    } catch (error) {
-        console.error("List Documents API Error:", error);
-        throw error;
-    }
+// Delete a document
+export const deleteDocument = async (fileId) => {
+    const response = await fetch(`${API_BASE_URL}/delete-doc`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ file_id: fileId }),
+    });
+
+    return handleApiResponse(response);
 };
 
-export const deleteDocument = async(fileId) => {
-    try {
-        const response = await fetch(`${API_BASE_URL}/delete-doc`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                file_id: fileId,
-            }),
-        });
-        return handleResponse(response);
-    } catch (error) {
-        console.error("Delete API Error:", error);
-        throw error;
-    }
+// Clean up all documents
+export const cleanupDocuments = async () => {
+    const response = await fetch(`${API_BASE_URL}/cleanup-documents`, {
+        method: "POST",
+    });
+
+    return handleApiResponse(response);
 };
 
-export const cleanupDocuments = async() => {
-    try {
-        const response = await fetch(`${API_BASE_URL}/cleanup-documents`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-        });
-        return handleResponse(response);
-    } catch (error) {
-        console.error("Cleanup Documents API Error:", error);
-        throw error;
-    }
-};
+export { supportedModels, defaultModel };
