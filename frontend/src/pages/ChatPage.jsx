@@ -13,16 +13,20 @@ const Container = styled.div`
   height: calc(100vh - 4rem);
   display: flex;
   flex-direction: column;
+  background: white;
 `;
 
 const Header = styled.div`
   text-align: center;
   margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e9ecef;
 `;
 
 const Title = styled.h1`
-  color: #333;
+  color: #2c3e50;
   margin-bottom: 1rem;
+  font-weight: 600;
 `;
 
 const BackButton = styled(Link)`
@@ -33,10 +37,11 @@ const BackButton = styled(Link)`
   padding: 0.5rem 1rem;
   border-radius: 6px;
   margin-bottom: 1rem;
-  transition: background 0.3s ease;
+  transition: all 0.3s ease;
 
   &:hover {
     background: #545b62;
+    transform: translateY(-1px);
   }
 `;
 
@@ -47,7 +52,7 @@ const ChatMessages = styled.div`
   background: #f8f9fa;
   border-radius: 12px;
   margin-bottom: 1rem;
-  border: 1px solid #e1e5e9;
+  border: 1px solid #e9ecef;
   max-height: 60vh;
 `;
 
@@ -68,22 +73,22 @@ const Avatar = styled.div`
   align-items: center;
   justify-content: center;
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   flex-shrink: 0;
 `;
 
 const MessageContent = styled.div`
   background: ${props => props.isUser ? '#007bff' : 'white'};
-  color: ${props => props.isUser ? 'white' : '#333'};
+  color: ${props => props.isUser ? 'white' : '#2c3e50'};
   padding: 1rem 1.5rem;
   border-radius: 18px;
   max-width: 70%;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  border: ${props => props.isUser ? 'none' : '1px solid #e1e5e9'};
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border: ${props => props.isUser ? 'none' : '1px solid #e9ecef'};
 
   p {
     margin: 0;
-    line-height: 1.5;
+    line-height: 1.6;
   }
 
   code {
@@ -105,13 +110,13 @@ const MessageContent = styled.div`
 
 const ChatInput = styled.div`
   background: white;
-  border: 1px solid #e1e5e9;
+  border: 1px solid #e9ecef;
   border-radius: 25px;
   padding: 0.5rem;
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 `;
 
 const InputForm = styled.form`
@@ -125,12 +130,12 @@ const Input = styled.input`
   padding: 1rem 1.5rem;
   border: none;
   background: transparent;
-  color: #333;
+  color: #2c3e50;
   font-size: 1rem;
   outline: none;
 
   &::placeholder {
-    color: #999;
+    color: #6c757d;
   }
 `;
 
@@ -145,15 +150,16 @@ const SendButton = styled.button`
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.3s ease;
+  transition: all 0.3s ease;
   flex-shrink: 0;
 
   &:hover:not(:disabled) {
     background: #0056b3;
+    transform: scale(1.05);
   }
 
   &:disabled {
-    background: #ccc;
+    background: #6c757d;
     cursor: not-allowed;
   }
 `;
@@ -192,8 +198,13 @@ const LoadingDots = styled.div`
 
 const EmptyState = styled.div`
   text-align: center;
-  color: #666;
+  color: #6c757d;
   padding: 3rem 1rem;
+
+  h3 {
+    color: #2c3e50;
+    margin-bottom: 1rem;
+  }
 `;
 
 const ClearButton = styled.button`
@@ -205,9 +216,11 @@ const ClearButton = styled.button`
   cursor: pointer;
   font-size: 0.9rem;
   margin-left: 1rem;
+  transition: all 0.3s ease;
 
   &:hover {
     background: #c82333;
+    transform: translateY(-1px);
   }
 `;
 
@@ -226,7 +239,6 @@ const ChatPage = () => {
     setIsLoading(true);
 
     try {
-      // Create a simple session ID
       const sessionId = `session_${Date.now()}`;
       
       const response = await sendMessage(message, sessionId, "gemini-2.5-flash");
@@ -276,7 +288,7 @@ const ChatPage = () => {
       <ChatMessages>
         {messages.length === 0 ? (
           <EmptyState>
-            <h3>Start a conversation!</h3>
+            <h3>Start a conversation</h3>
             <p>Upload a document and ask questions about its content.</p>
           </EmptyState>
         ) : (

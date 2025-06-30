@@ -7,21 +7,24 @@ const Container = styled.div`
   max-width: 600px;
   margin: 0 auto;
   padding: 2rem;
+  background: white;
+  min-height: 100vh;
 `;
 
 const Title = styled.h1`
-  color: #333;
+  color: #2c3e50;
   margin-bottom: 2rem;
   text-align: center;
+  font-weight: 600;
 `;
 
 const UploadArea = styled.div`
-  border: 2px dashed #ccc;
+  border: 2px dashed #dee2e6;
   border-radius: 12px;
   padding: 3rem 2rem;
   text-align: center;
-  background: ${props => props.isDragOver ? '#f8f9fa' : 'white'};
-  border-color: ${props => props.isDragOver ? '#007bff' : '#ccc'};
+  background: ${props => props.isDragOver ? '#f8f9fa' : '#fafbfc'};
+  border-color: ${props => props.isDragOver ? '#007bff' : '#dee2e6'};
   transition: all 0.3s ease;
   cursor: pointer;
 
@@ -34,17 +37,19 @@ const UploadArea = styled.div`
 const UploadIcon = styled.div`
   font-size: 3rem;
   margin-bottom: 1rem;
-  color: #666;
+  color: #6c757d;
+  font-weight: bold;
 `;
 
 const UploadText = styled.p`
-  color: #666;
+  color: #495057;
   margin-bottom: 1rem;
   font-size: 1.1rem;
+  font-weight: 500;
 `;
 
 const UploadSubtext = styled.p`
-  color: #999;
+  color: #6c757d;
   font-size: 0.9rem;
 `;
 
@@ -54,7 +59,7 @@ const FileInput = styled.input`
 
 const SelectedFile = styled.div`
   background: #f8f9fa;
-  border: 1px solid #e1e5e9;
+  border: 1px solid #e9ecef;
   border-radius: 8px;
   padding: 1rem;
   margin: 1rem 0;
@@ -64,12 +69,12 @@ const SelectedFile = styled.div`
 `;
 
 const FileName = styled.span`
-  color: #333;
+  color: #2c3e50;
   font-weight: 500;
 `;
 
 const FileSize = styled.span`
-  color: #666;
+  color: #6c757d;
   font-size: 0.9rem;
 `;
 
@@ -98,14 +103,15 @@ const UploadButton = styled.button`
   cursor: pointer;
   width: 100%;
   margin-top: 1rem;
-  transition: background 0.3s ease;
+  transition: all 0.3s ease;
 
   &:hover:not(:disabled) {
     background: #0056b3;
+    transform: translateY(-2px);
   }
 
   &:disabled {
-    background: #ccc;
+    background: #6c757d;
     cursor: not-allowed;
   }
 `;
@@ -180,7 +186,6 @@ const UploadPage = () => {
       setSuccess(`Document "${selectedFile.name}" uploaded successfully!`);
       setSelectedFile(null);
       
-      // Navigate to chat after successful upload
       setTimeout(() => {
         navigate('/chat');
       }, 1500);
@@ -211,18 +216,16 @@ const UploadPage = () => {
       
       <UploadArea
         isDragOver={isDragOver}
-        onClick={() => document.getElementById('fileInput').click()}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
+        onClick={() => document.getElementById('fileInput').click()}
       >
-        <UploadIcon>📄</UploadIcon>
+        <UploadIcon>PDF</UploadIcon>
         <UploadText>
-          Drag and drop a PDF file here, or click to select
+          {selectedFile ? selectedFile.name : 'Drop your PDF file here or click to browse'}
         </UploadText>
-        <UploadSubtext>
-          Only PDF files are supported (max 50MB)
-        </UploadSubtext>
+        <UploadSubtext>Only PDF files are supported</UploadSubtext>
       </UploadArea>
 
       <FileInput

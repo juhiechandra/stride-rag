@@ -6,12 +6,15 @@ const Container = styled.div`
   max-width: 1200px;
   margin: 0 auto;
   padding: 2rem;
+  background: white;
+  min-height: 100vh;
 `;
 
 const Title = styled.h1`
-  color: #333;
+  color: #2c3e50;
   margin-bottom: 2rem;
   text-align: center;
+  font-weight: 600;
 `;
 
 const DocumentGrid = styled.div`
@@ -22,28 +25,29 @@ const DocumentGrid = styled.div`
 `;
 
 const DocumentCard = styled.div`
-  background: white;
+  background: #f8f9fa;
   border-radius: 12px;
   padding: 1.5rem;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  border: 1px solid #e1e5e9;
+  border: 1px solid #e9ecef;
   transition: all 0.3s ease;
 
   &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+    transform: translateY(-4px);
+    box-shadow: 0 8px 25px rgba(0, 123, 255, 0.1);
+    border-color: #007bff;
   }
 `;
 
 const DocumentName = styled.h3`
-  color: #333;
+  color: #2c3e50;
   margin: 0 0 1rem 0;
   font-size: 1.2rem;
   word-break: break-word;
+  font-weight: 600;
 `;
 
 const DocumentMeta = styled.div`
-  color: #666;
+  color: #6c757d;
   font-size: 0.9rem;
   margin-bottom: 1.5rem;
 `;
@@ -62,14 +66,15 @@ const Button = styled.button`
   border-radius: 6px;
   cursor: pointer;
   font-size: 0.9rem;
-  transition: background 0.3s ease;
+  transition: all 0.3s ease;
 
   &:hover {
     background: ${props => props.danger ? '#c82333' : '#0056b3'};
+    transform: translateY(-1px);
   }
 
   &:disabled {
-    background: #ccc;
+    background: #6c757d;
     cursor: not-allowed;
   }
 `;
@@ -77,7 +82,7 @@ const Button = styled.button`
 const LoadingSpinner = styled.div`
   text-align: center;
   padding: 2rem;
-  color: #666;
+  color: #6c757d;
 `;
 
 const ErrorMessage = styled.div`
@@ -101,7 +106,12 @@ const SuccessMessage = styled.div`
 const EmptyState = styled.div`
   text-align: center;
   padding: 3rem;
-  color: #666;
+  color: #6c757d;
+
+  h3 {
+    color: #2c3e50;
+    margin-bottom: 1rem;
+  }
 `;
 
 const BackButton = styled(Link)`
@@ -112,10 +122,11 @@ const BackButton = styled(Link)`
   padding: 0.75rem 1.5rem;
   border-radius: 6px;
   margin-bottom: 2rem;
-  transition: background 0.3s ease;
+  transition: all 0.3s ease;
 
   &:hover {
     background: #545b62;
+    transform: translateY(-1px);
   }
 `;
 
@@ -127,14 +138,16 @@ const CleanupButton = styled.button`
   border-radius: 6px;
   cursor: pointer;
   margin-bottom: 2rem;
-  transition: background 0.3s ease;
+  margin-left: 1rem;
+  transition: all 0.3s ease;
 
   &:hover {
     background: #c82333;
+    transform: translateY(-1px);
   }
 
   &:disabled {
-    background: #ccc;
+    background: #6c757d;
     cursor: not-allowed;
   }
 `;
@@ -192,7 +205,7 @@ const Documents = () => {
       }
 
       setSuccess(`Document "${filename}" deleted successfully`);
-      fetchDocuments(); // Refresh the list
+      fetchDocuments();
       setTimeout(() => setSuccess(""), 3000);
     } catch (err) {
       setError(err.message);
@@ -203,7 +216,7 @@ const Documents = () => {
   };
 
   const cleanupAllDocuments = async () => {
-    if (!window.confirm("Are you sure you want to delete ALL documents? This action cannot be undone.")) {
+    if (!window.confirm("Are you sure you want to delete ALL documents? This cannot be undone.")) {
       return;
     }
 
@@ -211,6 +224,9 @@ const Documents = () => {
       setCleaningUp(true);
       const response = await fetch(`${API_BASE_URL}/cleanup-documents`, {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
       });
 
       if (!response.ok) {
@@ -218,8 +234,8 @@ const Documents = () => {
         throw new Error(errorData.message || "Failed to cleanup documents");
       }
 
-      setSuccess("All documents cleaned up successfully");
-      fetchDocuments(); // Refresh the list
+      setSuccess("All documents have been deleted successfully");
+      fetchDocuments();
       setTimeout(() => setSuccess(""), 3000);
     } catch (err) {
       setError(err.message);
@@ -239,26 +255,25 @@ const Documents = () => {
 
   return (
     <Container>
-      <BackButton to="/">← Back to Home</BackButton>
-      
+      <div>
+        <BackButton to="/">← Back to Home</BackButton>
+        <CleanupButton
+          onClick={cleanupAllDocuments}
+          disabled={cleaningUp || documents.length === 0}
+        >
+          {cleaningUp ? "Cleaning up..." : "Delete All Documents"}
+        </CleanupButton>
+      </div>
+
       <Title>Document Library</Title>
 
       {error && <ErrorMessage>{error}</ErrorMessage>}
       {success && <SuccessMessage>{success}</SuccessMessage>}
 
-      {documents.length > 0 && (
-        <CleanupButton
-          onClick={cleanupAllDocuments}
-          disabled={cleaningUp}
-        >
-          {cleaningUp ? "Cleaning up..." : "Delete All Documents"}
-        </CleanupButton>
-      )}
-
       {documents.length === 0 ? (
         <EmptyState>
           <h3>No documents found</h3>
-          <p>Upload some documents to get started!</p>
+          <p>Upload a document to get started.</p>
         </EmptyState>
       ) : (
         <DocumentGrid>
@@ -266,10 +281,9 @@ const Documents = () => {
             <DocumentCard key={doc.id}>
               <DocumentName>{doc.filename}</DocumentName>
               <DocumentMeta>
-                <div>ID: {doc.id}</div>
-                <div>
-                  Uploaded: {new Date(doc.upload_timestamp).toLocaleDateString()}
-                </div>
+                Uploaded: {new Date(doc.upload_date).toLocaleDateString()}
+                <br />
+                ID: {doc.id}
               </DocumentMeta>
               <ButtonGroup>
                 <Button

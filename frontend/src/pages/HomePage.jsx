@@ -7,19 +7,25 @@ const Container = styled.div`
   margin: 0 auto;
   padding: 2rem;
   text-align: center;
+  background: white;
+  min-height: 100vh;
 `;
 
 const Title = styled.h1`
-  color: #333;
-  font-size: 3rem;
+  color: #2c3e50;
+  font-size: 2.5rem;
   margin-bottom: 1rem;
+  font-weight: 600;
 `;
 
 const Subtitle = styled.p`
-  color: #666;
-  font-size: 1.2rem;
+  color: #6c757d;
+  font-size: 1.1rem;
   margin-bottom: 3rem;
   line-height: 1.6;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
 `;
 
 const ButtonGroup = styled.div`
@@ -27,6 +33,7 @@ const ButtonGroup = styled.div`
   gap: 1rem;
   justify-content: center;
   flex-wrap: wrap;
+  margin-bottom: 4rem;
 `;
 
 const ActionButton = styled(Link)`
@@ -37,57 +44,71 @@ const ActionButton = styled(Link)`
   text-decoration: none;
   border-radius: 8px;
   font-weight: 500;
-  transition: background 0.3s ease;
+  transition: all 0.3s ease;
+  border: 2px solid #007bff;
 
   &:hover {
     background: #0056b3;
+    border-color: #0056b3;
+    transform: translateY(-2px);
   }
 `;
 
 const SecondaryButton = styled(Link)`
   display: inline-block;
   padding: 1rem 2rem;
-  background: #6c757d;
-  color: white;
+  background: transparent;
+  color: #007bff;
   text-decoration: none;
   border-radius: 8px;
   font-weight: 500;
-  transition: background 0.3s ease;
+  border: 2px solid #007bff;
+  transition: all 0.3s ease;
 
   &:hover {
-    background: #545b62;
+    background: #007bff;
+    color: white;
+    transform: translateY(-2px);
   }
 `;
 
 const FeatureSection = styled.div`
-  margin-top: 4rem;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
   gap: 2rem;
 `;
 
 const FeatureCard = styled.div`
-  background: white;
+  background: #f8f9fa;
   padding: 2rem;
   border-radius: 12px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  border: 1px solid #e1e5e9;
+  border: 1px solid #e9ecef;
+  transition: all 0.3s ease;
+
+  &:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 25px rgba(0, 123, 255, 0.1);
+    border-color: #007bff;
+  }
 `;
 
 const FeatureTitle = styled.h3`
-  color: #333;
+  color: #2c3e50;
   margin-bottom: 1rem;
+  font-size: 1.2rem;
+  font-weight: 600;
 `;
 
 const FeatureDescription = styled.p`
-  color: #666;
+  color: #6c757d;
   line-height: 1.5;
+  margin: 0;
 `;
 
 const HomePage = () => {
   return (
     <Container>
-      <Title>Simple RAG Chatbot</Title>
+      <Title>RAG Document Assistant</Title>
       <Subtitle>
         Upload PDF documents and ask questions about their content using advanced AI.
         Powered by Gemini 2.5 Flash with text and image capabilities.
@@ -101,28 +122,28 @@ const HomePage = () => {
 
       <FeatureSection>
         <FeatureCard>
-          <FeatureTitle>📄 Document Upload</FeatureTitle>
+          <FeatureTitle>Document Upload</FeatureTitle>
           <FeatureDescription>
             Upload PDF documents and automatically extract text and images for analysis.
           </FeatureDescription>
         </FeatureCard>
         
         <FeatureCard>
-          <FeatureTitle>💬 Smart Chat</FeatureTitle>
+          <FeatureTitle>Smart Chat</FeatureTitle>
           <FeatureDescription>
             Ask questions about your documents and get intelligent answers with source citations.
           </FeatureDescription>
         </FeatureCard>
         
         <FeatureCard>
-          <FeatureTitle>🔍 Vector Search</FeatureTitle>
+          <FeatureTitle>Vector Search</FeatureTitle>
           <FeatureDescription>
             Advanced semantic search finds relevant content even when exact keywords don't match.
           </FeatureDescription>
         </FeatureCard>
         
         <FeatureCard>
-          <FeatureTitle>🖼️ Image Analysis</FeatureTitle>
+          <FeatureTitle>Image Analysis</FeatureTitle>
           <FeatureDescription>
             Gemini 2.5 Flash analyzes images from PDFs including charts, diagrams, and text.
           </FeatureDescription>

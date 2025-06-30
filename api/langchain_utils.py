@@ -14,19 +14,8 @@ model_logger.info("Initializing LangChain utilities")
 
 
 def get_rag_chain(model="gemini-2.5-flash"):
-    """
-    Create a RAG chain with the specified model using simple vector search.
-
-    Args:
-        model (str): The model to use for the RAG chain.
-
-    Returns:
-        A LangChain retrieval chain.
-    """
     with PerformanceTimer(model_logger, f"get_rag_chain:{model}"):
         try:
-            # Configure vector retriever with MMR search
-            model_logger.info(f"Configuring vector retriever for model: {model}")
             retriever = vectorstore.as_retriever(
                 search_type="mmr",
                 search_kwargs={
@@ -35,16 +24,10 @@ def get_rag_chain(model="gemini-2.5-flash"):
                     "lambda_mult": 0.75
                 }
             )
-            model_logger.info("Vector retriever configured with MMR search")
 
-            # Initialize LLM - ONLY USE GEMINI MODELS
-            # Force model to be a Gemini model
             if not model.startswith("gemini"):
-                model_logger.warning(
-                    f"Non-Gemini model requested: {model}, forcing to gemini-2.5-flash")
                 model = "gemini-2.5-flash"
 
-            model_logger.info(f"Using Gemini model: {model}")
             llm = ChatGoogleGenerativeAI(
                 model=model,
                 google_api_key=os.getenv("GEMINI_KEY"),
@@ -53,8 +36,6 @@ def get_rag_chain(model="gemini-2.5-flash"):
                 max_output_tokens=2048
             )
 
-            # Contextualization prompt
-            model_logger.info("Creating contextualization prompt")
             contextualize_prompt = ChatPromptTemplate.from_messages([
                 ("system", """Given chat history and a question, reformulate it to be standalone. 
                 Consider both text and image contexts."""),
@@ -62,15 +43,12 @@ def get_rag_chain(model="gemini-2.5-flash"):
                 ("human", "{input}")
             ])
 
-            model_logger.info("Creating history-aware retriever")
             history_aware_retriever = create_history_aware_retriever(
                 llm,
                 retriever,
                 contextualize_prompt
             )
 
-            # QA prompt
-            model_logger.info("Creating QA prompt")
             qa_prompt = ChatPromptTemplate.from_messages([
                 ("system", """You are a technical expert analyzing documents. Use both text and image context.
                 Text chunks may contain page numbers. Image summaries start with 'IMAGE:'. 
@@ -80,22 +58,11 @@ def get_rag_chain(model="gemini-2.5-flash"):
                 ("human", "Answer based on this context:\n{context}")
             ])
 
-            # Assemble full chain
-            model_logger.info("Creating question-answer chain")
-            question_answer_chain = create_stuff_documents_chain(
-                llm, qa_prompt)
+            question_answer_chain = create_stuff_documents_chain(llm, qa_prompt)
+            retrieval_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
 
-            model_logger.info("Creating retrieval chain")
-            retrieval_chain = create_retrieval_chain(
-                history_aware_retriever, question_answer_chain
-            )
-
-            model_logger.info(
-                f"RAG chain created successfully for model: {model}")
             return retrieval_chain
 
         except Exception as e:
-            error_msg = f"Error creating RAG chain for model {model}: {str(e)}"
-            model_logger.error(error_msg)
-            error_logger.error(error_msg, exc_info=True)
+            error_logger.error(f"Error creating RAG chain for model {model}: {str(e)}", exc_info=True)
             raise
